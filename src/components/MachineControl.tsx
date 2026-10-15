@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import type { MachineState } from '@/types';
 import {
   Usb,
@@ -57,6 +57,8 @@ export default function MachineControl({
   const jogFeedRef = useRef(jogFeed);
   jogDistRef.current = jogDist;
   jogFeedRef.current = jogFeed;
+  const lastJogTimeRef = useRef(0);
+  const JOG_COOLDOWN_MS = 150;
 
   const connected = machine.connected;
   const carving = machine.sending;
@@ -76,6 +78,13 @@ export default function MachineControl({
   const statusColor = statusColors[machine.status] || 'text-slate-400';
   const statusDot = !connected ? 'bg-slate-600' : machine.status === 'alarm' ? 'bg-red-400' : machine.status === 'hold' ? 'bg-amber-400' : machine.status === 'run' || carving ? 'bg-blue-400' : 'bg-green-400';
 
+  const safeJog = useCallback((axis: 'x' | 'y' | 'z', dir: number, dist: number, feed: number) => {
+    const now = Date.now();
+    if (now - lastJogTimeRef.current < JOG_COOLDOWN_MS) return;
+    lastJogTimeRef.current = now;
+    onJog(axis, dir, dist, feed);
+  }, [onJog]);
+
   // Keyboard jogging
   useEffect(() => {
     if (!connected || carving) return;
@@ -85,17 +94,17 @@ export default function MachineControl({
       const d = jogDistRef.current;
       const f = jogFeedRef.current;
       switch (e.key) {
-        case 'ArrowUp': e.preventDefault(); onJog('y', -1, d, f); break;
-        case 'ArrowDown': e.preventDefault(); onJog('y', 1, d, f); break;
-        case 'ArrowLeft': e.preventDefault(); onJog('x', -1, d, f); break;
-        case 'ArrowRight': e.preventDefault(); onJog('x', 1, d, f); break;
-        case 'PageUp': e.preventDefault(); onJog('z', 1, d, f); break;
-        case 'PageDown': e.preventDefault(); onJog('z', -1, d, f); break;
+        case 'ArrowUp': e.preventDefault(); safeJog('y', 1, d, f); break;
+        case 'ArrowDown': e.preventDefault(); safeJog('y', -1, d, f); break;
+        case 'ArrowLeft': e.preventDefault(); safeJog('x', -1, d, f); break;
+        case 'ArrowRight': e.preventDefault(); safeJog('x', 1, d, f); break;
+        case 'PageUp': e.preventDefault(); safeJog('z', 1, d, f); break;
+        case 'PageDown': e.preventDefault(); safeJog('z', -1, d, f); break;
       }
     }
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [connected, carving, onJog]);
+  }, [connected, carving, safeJog]);
 
   function handleManualSend() {
     if (manualCmd.trim()) {
@@ -258,19 +267,19 @@ export default function MachineControl({
           {/* XY D-Pad */}
           <div className="grid grid-cols-3 gap-1">
             <div />
-            <DpadBtn onClick={() => onJog('y', -1, jogDist, jogFeed)} disabled={carving}>
+            <DpadBtn onClick={() => safeJog('y', 1, jogDist, jogFeed)} disabled={carving}>
               <ArrowUp size={18} />
             </DpadBtn>
             <div />
-            <DpadBtn onClick={() => onJog('x', -1, jogDist, jogFeed)} disabled={carving}>
+            <DpadBtn onClick={() => safeJog('x', -1, jogDist, jogFeed)} disabled={carving}>
               <ArrowLeft size={18} />
             </DpadBtn>
             <div className="flex items-center justify-center text-[10px] text-slate-700 font-mono">XY</div>
-            <DpadBtn onClick={() => onJog('x', 1, jogDist, jogFeed)} disabled={carving}>
+            <DpadBtn onClick={() => safeJog('x', 1, jogDist, jogFeed)} disabled={carving}>
               <ArrowRight size={18} />
             </DpadBtn>
             <div />
-            <DpadBtn onClick={() => onJog('y', 1, jogDist, jogFeed)} disabled={carving}>
+            <DpadBtn onClick={() => safeJog('y', -1, jogDist, jogFeed)} disabled={carving}>
               <ArrowDown size={18} />
             </DpadBtn>
             <div />
@@ -278,11 +287,11 @@ export default function MachineControl({
 
           {/* Z column */}
           <div className="flex flex-col gap-1 justify-center">
-            <DpadBtn onClick={() => onJog('z', 1, jogDist, jogFeed)} disabled={carving} accent="blue">
+            <DpadBtn onClick={() => safeJog('z', 1, jogDist, jogFeed)} disabled={carving} accent="blue">
               <ChevronUp size={18} />
             </DpadBtn>
             <div className="flex items-center justify-center text-[10px] text-slate-700 font-mono h-9">Z</div>
-            <DpadBtn onClick={() => onJog('z', -1, jogDist, jogFeed)} disabled={carving} accent="blue">
+            <DpadBtn onClick={() => safeJog('z', -1, jogDist, jogFeed)} disabled={carving} accent="blue">
               <ChevronDown size={18} />
             </DpadBtn>
           </div>

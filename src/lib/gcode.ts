@@ -200,12 +200,17 @@ function generateVCarveGCode(shape: Shape, settings: CamSettings, lines: string[
 }
 
 function cutPath(pathPoints: Point[], settings: CamSettings, lines: string[], passCount: number, isClosed: boolean) {
+  const startPt = pathPoints[0];
+
   for (let pass = 1; pass <= passCount; pass++) {
     const z = -(Math.min(pass * settings.passDepth, settings.cutDepth));
-    const startPt = pathPoints[0];
 
-    lines.push(`G0 X${startPt.x.toFixed(3)} Y${startPt.y.toFixed(3)}`);
-    lines.push(`G1 Z${z.toFixed(3)} F${settings.plungeRate}`);
+    if (pass === 1) {
+      lines.push(`G0 X${startPt.x.toFixed(3)} Y${startPt.y.toFixed(3)}`);
+      lines.push(`G1 Z${z.toFixed(3)} F${settings.plungeRate}`);
+    } else {
+      lines.push(`G1 Z${z.toFixed(3)} F${settings.plungeRate}`);
+    }
 
     for (let i = 1; i < pathPoints.length; i++) {
       const p = pathPoints[i];
@@ -215,9 +220,9 @@ function cutPath(pathPoints: Point[], settings: CamSettings, lines: string[], pa
     if (isClosed) {
       lines.push(`G1 X${startPt.x.toFixed(3)} Y${startPt.y.toFixed(3)} F${settings.feedRate}`);
     }
-
-    lines.push(`G0 Z${settings.safeHeight.toFixed(3)}`);
   }
+
+  lines.push(`G0 Z${settings.safeHeight.toFixed(3)}`);
 }
 
 export function parseGCode(lines: string[]): GCodeLine[] {

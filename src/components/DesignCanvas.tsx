@@ -60,18 +60,18 @@ export default function DesignCanvas({
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
     const x = (sx - rect.left - view.offsetX) / (MM_TO_PX * view.scale);
-    const y = (sy - rect.top - view.offsetY) / (MM_TO_PX * view.scale);
-    return { x, y };
-  }, [view]);
+    const rawY = (sy - rect.top - view.offsetY) / (MM_TO_PX * view.scale);
+    return { x, y: workspace.height - rawY };
+  }, [view, workspace.height]);
 
   const worldToScreen = useCallback((wx: number, wy: number): Point => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     return {
       x: wx * MM_TO_PX * view.scale + view.offsetX,
-      y: wy * MM_TO_PX * view.scale + view.offsetY,
+      y: (workspace.height - wy) * MM_TO_PX * view.scale + view.offsetY,
     };
-  }, [view]);
+  }, [view, workspace.height]);
 
   const resizeCanvas = useCallback(() => {
     const canvas = canvasRef.current;
@@ -510,11 +510,12 @@ export default function DesignCanvas({
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
     const wx = (mx - view.offsetX) / (MM_TO_PX * view.scale);
-    const wy = (my - view.offsetY) / (MM_TO_PX * view.scale);
+    const rawWy = (my - view.offsetY) / (MM_TO_PX * view.scale);
+    const wy = workspace.height - rawWy;
     setView({
       scale: newScale,
       offsetX: mx - wx * MM_TO_PX * newScale,
-      offsetY: my - wy * MM_TO_PX * newScale,
+      offsetY: my - (workspace.height - wy) * MM_TO_PX * newScale,
     });
   }
 
