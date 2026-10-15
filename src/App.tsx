@@ -3,7 +3,7 @@ import type { Shape, ToolType, CamSettings, GCodeLine, MachineState, ConsoleEntr
 import { generateGCode, parseGCode, estimateTime } from '@/lib/gcode';
 import { SerialConnection } from '@/lib/serial';
 import { WorkerStreamer } from '@/lib/worker-streamer';
-import { genId } from '@/lib/geometry';
+import { genId, shapeBounds } from '@/lib/geometry';
 import { parseSvg } from '@/lib/svgImport';
 import { loadCustomFont } from '@/lib/fontManager';
 import Toolbar from '@/components/Toolbar';
@@ -203,11 +203,22 @@ function App() {
   }, [handleSendCommand]);
 
   const handleGenerateGCode = useCallback(() => {
+    let outOfBounds = false;
+    for (const s of shapes) {
+      const b = shapeBounds(s);
+      if (b.minX < 0 || b.minY < 0 || b.maxX > workspace.width || b.maxY > workspace.height) {
+        outOfBounds = true;
+        break;
+      }
+    }
+    if (outOfBounds) {
+      addConsoleEntry('error', 'Warning: some shapes extend beyond workspace bounds. G-Code generated but carving may hit machine limits.');
+    }
     const lines = generateGCode(shapes, camSettings);
     setGcodeLines(lines);
     setParsedGcode(parseGCode(lines));
     setActiveTab('gcode');
-  }, [shapes, camSettings]);
+  }, [shapes, camSettings, workspace, addConsoleEntry]);
 
   const handleStartCarve = useCallback(() => {
     if (!streamerRef.current || gcodeLines.length === 0) return;
@@ -219,22 +230,26 @@ function App() {
   }, [gcodeLines, addConsoleEntry]);
 
   const handlePause = useCallback(() => {
-    handleSendCommand('!');
+    if (!serialRef.current) return;
+    serialRef.current.sendRaw('!');
+    addConsoleEntry('tx', '!');
     setMachine((m) => ({ ...m, status: 'hold' }));
     addConsoleEntry('info', 'Feed hold (pause)');
-  }, [handleSendCommand, addConsoleEntry]);
+  }, [addConsoleEntry]);
 
   const handleResume = useCallback(() => {
-    handleSendCommand('~');
+    if (!serialRef.current) return;
+    serialRef.current.sendRaw('~');
+    addConsoleEntry('tx', '~');
     setMachine((m) => ({ ...m, status: 'run' }));
     addConsoleEntry('info', 'Cycle resume');
-  }, [handleSendCommand, addConsoleEntry]);
+  }, [addConsoleEntry]);
 
   const handleAbort = useCallback(() => {
     if (serialRef.current) serialRef.current.sendRaw('\x18');
     streamerRef.current?.stop();
     setMachine((m) => ({ ...m, sending: false, status: 'idle' }));
-    addConsoleEntry('info', 'Emergency stop (abort)');
+    addConsoleEntry('info', 'Emergency stop (Ctrl-X soft reset)');
   }, [addConsoleEntry]);
 
   const handleClearShapes = useCallback(() => {

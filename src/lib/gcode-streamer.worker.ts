@@ -24,6 +24,7 @@ type WorkerOutMessage =
 
 let lines: string[] = [];
 let sentIndex = 0;
+let ackedIndex = 0;
 let pendingChars = 0;
 let sending = false;
 
@@ -46,7 +47,7 @@ function pump() {
     post({ type: 'progress', sent: sentIndex, total: lines.length });
   }
 
-  if (sending && sentIndex >= lines.length && pendingChars === 0) {
+  if (sending && sentIndex >= lines.length && ackedIndex >= lines.length) {
     sending = false;
     post({ type: 'complete' });
   }
@@ -59,12 +60,14 @@ self.onmessage = (e: MessageEvent<WorkerMessage>) => {
     case 'load':
       lines = msg.lines.filter((l) => l.trim() && !l.trim().startsWith(';'));
       sentIndex = 0;
+      ackedIndex = 0;
       pendingChars = 0;
       break;
 
     case 'start':
       sending = true;
       sentIndex = 0;
+      ackedIndex = 0;
       pendingChars = 0;
       pump();
       break;
@@ -75,11 +78,12 @@ self.onmessage = (e: MessageEvent<WorkerMessage>) => {
       break;
 
     case 'ack':
-      if (sentIndex > 0) {
-        const lastLine = lines[sentIndex - 1];
-        if (lastLine) {
-          pendingChars = Math.max(0, pendingChars - (lastLine.length + 1));
+      if (ackedIndex < sentIndex) {
+        const ackedLine = lines[ackedIndex];
+        if (ackedLine) {
+          pendingChars = Math.max(0, pendingChars - (ackedLine.length + 1));
         }
+        ackedIndex++;
       }
       if (sending) pump();
       break;
