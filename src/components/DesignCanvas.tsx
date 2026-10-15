@@ -441,16 +441,21 @@ export default function DesignCanvas({
       const dy = world.y - dragOffset.y;
       setShapes((prev) => prev.map((s) => {
         if (s.id === selectedId) return moveShape(s, dx, dy);
-        if (s.type === 'dimension' && s.targetId === selectedId) {
-          return {
-            ...s,
-            x1: s.x1 + dx,
-            y1: s.y1 + dy,
-            x2: s.x2 + dx,
-            y2: s.y2 + dy,
-            anchorStart: s.anchorStart ? { x: s.anchorStart.x + dx, y: s.anchorStart.y + dy } : undefined,
-            anchorEnd: s.anchorEnd ? { x: s.anchorEnd.x + dx, y: s.anchorEnd.y + dy } : undefined,
-          };
+        if (s.type === 'dimension') {
+          const hasStartAnchor = s.targetStartId === selectedId || (!s.targetStartId && s.targetId === selectedId && !!s.anchorStart);
+          const hasEndAnchor = s.targetEndId === selectedId || (!s.targetEndId && s.targetId === selectedId && !!s.anchorEnd);
+          const legacyTarget = !s.targetStartId && !s.targetEndId && s.targetId === selectedId && !s.anchorStart && !s.anchorEnd;
+          if (hasStartAnchor || hasEndAnchor || legacyTarget) {
+            return {
+              ...s,
+              x1: hasStartAnchor || legacyTarget ? s.x1 + dx : s.x1,
+              y1: hasStartAnchor || legacyTarget ? s.y1 + dy : s.y1,
+              x2: hasEndAnchor || legacyTarget ? s.x2 + dx : s.x2,
+              y2: hasEndAnchor || legacyTarget ? s.y2 + dy : s.y2,
+              anchorStart: hasStartAnchor && s.anchorStart ? { x: s.anchorStart.x + dx, y: s.anchorStart.y + dy } : s.anchorStart,
+              anchorEnd: hasEndAnchor && s.anchorEnd ? { x: s.anchorEnd.x + dx, y: s.anchorEnd.y + dy } : s.anchorEnd,
+            };
+          }
         }
         return s;
       }));
@@ -483,13 +488,20 @@ export default function DesignCanvas({
       if (newShape.type === 'dimension') {
         const startSnap = findNearestShapeEndpoint(shapes, { x: newShape.x1, y: newShape.y1 }, null, 3);
         const endSnap = findNearestShapeEndpoint(shapes, { x: newShape.x2, y: newShape.y2 }, null, 3);
-        if (startSnap && (!endSnap || startSnap.shape.id === endSnap.shape.id)) {
-          newShape.targetId = startSnap.shape.id;
+        if (startSnap) {
+          newShape.targetStartId = startSnap.shape.id;
           newShape.anchorStart = startSnap.point;
-          if (endSnap) newShape.anchorEnd = endSnap.point;
-        } else if (endSnap && (!startSnap || startSnap.shape.id === endSnap.shape.id)) {
-          newShape.targetId = endSnap.shape.id;
+        }
+        if (endSnap) {
+          newShape.targetEndId = endSnap.shape.id;
           newShape.anchorEnd = endSnap.point;
+        }
+        if (startSnap && endSnap && startSnap.shape.id === endSnap.shape.id) {
+          newShape.targetId = startSnap.shape.id;
+        } else if (startSnap && !endSnap) {
+          newShape.targetId = startSnap.shape.id;
+        } else if (endSnap && !startSnap) {
+          newShape.targetId = endSnap.shape.id;
         }
       }
       setShapes((prev) => [...prev, newShape]);
@@ -707,9 +719,11 @@ export default function DesignCanvas({
                       s.id === dim.id
                         ? {
                             ...s,
-                            targetId: linked.id,
-                            anchorStart: startSnap?.shape.id === linked.id ? startSnap.point : undefined,
-                            anchorEnd: endSnap?.shape.id === linked.id ? endSnap.point : undefined,
+                            targetId: startSnap?.shape.id === endSnap?.shape.id ? linked.id : undefined,
+                            targetStartId: startSnap?.shape.id,
+                            targetEndId: endSnap?.shape.id,
+                            anchorStart: startSnap?.point,
+                            anchorEnd: endSnap?.point,
                           } as Shape
                         : s
                     ));

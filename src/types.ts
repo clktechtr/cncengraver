@@ -52,6 +52,8 @@ export type DimensionShape = ShapeBase & {
   x2: number;
   y2: number;
   targetId?: string;
+  targetStartId?: string;
+  targetEndId?: string;
   anchorStart?: Point;
   anchorEnd?: Point;
 };
