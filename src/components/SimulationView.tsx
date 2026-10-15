@@ -31,6 +31,7 @@ export default function SimulationView({
   const [playing, setPlaying] = useState(false);
   const [view, setView] = useState<View3D>({ rotX: 0, rotY: 0, zoom: 1, panX: 0, panY: 0 });
   const [isRotating, setIsRotating] = useState(false);
+  const [isPanning, setIsPanning] = useState(false);
   const [lastMouse, setLastMouse] = useState({ x: 0, y: 0 });
   const animRef = useRef<number | null>(null);
 
@@ -266,24 +267,33 @@ export default function SimulationView({
   }
 
   function handleMouseDown(e: React.MouseEvent) {
-    setIsRotating(true);
+    const shouldPan = e.button === 1 || e.button === 2 || e.shiftKey;
+    if (shouldPan) {
+      e.preventDefault();
+      setIsPanning(true);
+    } else if (e.button === 0) {
+      setIsRotating(true);
+    }
     setLastMouse({ x: e.clientX, y: e.clientY });
   }
 
   function handleMouseMove(e: React.MouseEvent) {
-    if (!isRotating) return;
+    if (!isRotating && !isPanning) return;
     const dx = e.clientX - lastMouse.x;
     const dy = e.clientY - lastMouse.y;
-    setView((v) => ({
-      ...v,
-      rotY: v.rotY + dx * 0.01,
-      rotX: Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, v.rotX + dy * 0.01)),
-    }));
+    setView((v) => isPanning
+      ? { ...v, panX: v.panX + dx, panY: v.panY + dy }
+      : {
+          ...v,
+          rotY: v.rotY + dx * 0.01,
+          rotX: Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, v.rotX + dy * 0.01)),
+        });
     setLastMouse({ x: e.clientX, y: e.clientY });
   }
 
   function handleMouseUp() {
     setIsRotating(false);
+    setIsPanning(false);
   }
 
   function handleWheel(e: React.WheelEvent) {
@@ -306,6 +316,7 @@ export default function SimulationView({
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
         onWheel={handleWheel}
+        onContextMenu={(e) => e.preventDefault()}
       />
       <div className="absolute bottom-3 left-3 right-3 flex items-center gap-2">
         <button
@@ -348,9 +359,15 @@ export default function SimulationView({
         >
           −
         </button>
+        <button
+          onClick={() => setView({ rotX: 0, rotY: 0, zoom: 1, panX: 0, panY: 0 })}
+          className="w-8 h-8 flex items-center justify-center bg-slate-800/80 hover:bg-slate-700 text-slate-300 rounded border border-slate-700 text-sm"
+        >
+          R
+        </button>
       </div>
       <div className="absolute top-3 left-3 text-[10px] text-slate-500 bg-slate-900/80 px-2 py-1 rounded">
-        Drag to rotate · Scroll to zoom
+        Drag to rotate · Shift/middle/right drag to move · Scroll to zoom
       </div>
     </div>
   );

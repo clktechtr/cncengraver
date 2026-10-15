@@ -440,8 +440,19 @@ export default function DesignCanvas({
       const dx = world.x - dragOffset.x;
       const dy = world.y - dragOffset.y;
       setShapes((prev) => prev.map((s) => {
-        if (s.id !== selectedId) return s;
-        return moveShape(s, dx, dy);
+        if (s.id === selectedId) return moveShape(s, dx, dy);
+        if (s.type === 'dimension' && s.targetId === selectedId) {
+          return {
+            ...s,
+            x1: s.x1 + dx,
+            y1: s.y1 + dy,
+            x2: s.x2 + dx,
+            y2: s.y2 + dy,
+            anchorStart: s.anchorStart ? { x: s.anchorStart.x + dx, y: s.anchorStart.y + dy } : undefined,
+            anchorEnd: s.anchorEnd ? { x: s.anchorEnd.x + dx, y: s.anchorEnd.y + dy } : undefined,
+          };
+        }
+        return s;
       }));
       setDragOffset(world);
       return;
@@ -473,9 +484,12 @@ export default function DesignCanvas({
         const startSnap = findNearestShapeEndpoint(shapes, { x: newShape.x1, y: newShape.y1 }, null, 3);
         const endSnap = findNearestShapeEndpoint(shapes, { x: newShape.x2, y: newShape.y2 }, null, 3);
         if (startSnap && (!endSnap || startSnap.shape.id === endSnap.shape.id)) {
-          (newShape as any).targetId = startSnap.shape.id;
+          newShape.targetId = startSnap.shape.id;
+          newShape.anchorStart = startSnap.point;
+          if (endSnap) newShape.anchorEnd = endSnap.point;
         } else if (endSnap && (!startSnap || startSnap.shape.id === endSnap.shape.id)) {
-          (newShape as any).targetId = endSnap.shape.id;
+          newShape.targetId = endSnap.shape.id;
+          newShape.anchorEnd = endSnap.point;
         }
       }
       setShapes((prev) => [...prev, newShape]);
@@ -651,31 +665,22 @@ export default function DesignCanvas({
                 if (e.key === 'Enter') {
                   const val = parseFloat((e.target as HTMLInputElement).value);
                   if (isNaN(val) || val <= 0) return;
-                  if (target) {
-                    setShapes((prev) => prev.map((s) => {
-                      if (s.id !== target.id) return s;
-                      return resizeShapeByDimension(s, dim, val) as Shape;
-                    }));
-                    setShapes((prev) => prev.map((s) => {
+                  setShapes((prev) => {
+                    const ratio = val / dist;
+                    const nextTarget = target
+                      ? resizeShapeByDimension(target, dim, val) as Shape
+                      : null;
+                    return prev.map((s) => {
+                      if (target && s.id === target.id) return nextTarget as Shape;
                       if (s.id !== dim.id) return s;
-                      const ratio = val / dist;
                       return {
                         ...s,
                         x2: dim.x1 + dx * ratio,
                         y2: dim.y1 + dy * ratio,
+                        anchorEnd: dim.anchorEnd ? { x: dim.x1 + dx * ratio, y: dim.y1 + dy * ratio } : undefined,
                       } as Shape;
-                    }));
-                  } else {
-                    setShapes((prev) => prev.map((s) => {
-                      if (s.id !== dim.id) return s;
-                      const ratio = val / dist;
-                      return {
-                        ...s,
-                        x2: dim.x1 + dx * ratio,
-                        y2: dim.y1 + dy * ratio,
-                      } as Shape;
-                    }));
-                  }
+                    });
+                  });
                   (e.target as HTMLInputElement).blur();
                 }
               }}
@@ -699,7 +704,14 @@ export default function DesignCanvas({
                   const linked = startSnap?.shape || endSnap?.shape;
                   if (linked) {
                     setShapes((prev) => prev.map((s) =>
-                      s.id === dim.id ? { ...s, targetId: linked.id } as Shape : s
+                      s.id === dim.id
+                        ? {
+                            ...s,
+                            targetId: linked.id,
+                            anchorStart: startSnap?.shape.id === linked.id ? startSnap.point : undefined,
+                            anchorEnd: endSnap?.shape.id === linked.id ? endSnap.point : undefined,
+                          } as Shape
+                        : s
                     ));
                   }
                 }}

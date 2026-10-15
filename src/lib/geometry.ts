@@ -172,46 +172,40 @@ export function resizeShapeByDimension(
   if (currentDist < 0.001) return shape;
 
   const scale = newDistance / currentDist;
+  const anchor = dimension.anchorEnd ?? dimension.anchorStart ?? { x: dimension.x1, y: dimension.y1 };
+  const fixedPoint = dimension.anchorEnd ? { x: dimension.x1, y: dimension.y1 } : anchor;
+
+  const scalePoint = (point: Point): Point => ({
+    x: fixedPoint.x + (point.x - fixedPoint.x) * scale,
+    y: fixedPoint.y + (point.y - fixedPoint.y) * scale,
+  });
 
   switch (shape.type) {
     case 'rect': {
       const s = shape as RectShape;
-      const anchorX = Math.min(dimension.x1, dimension.x2) === s.x ? s.x + s.width : s.x;
-      const anchorY = Math.min(dimension.y1, dimension.y2) === s.y ? s.y + s.height : s.y;
-      const newW = s.width * scale;
-      const newH = s.height * scale;
-      const newX = anchorX === s.x ? s.x : anchorX - newW;
-      const newY = anchorY === s.y ? s.y : anchorY - newH;
-      return { ...s, x: newX, y: newY, width: newW, height: newH };
+      const topLeft = scalePoint({ x: s.x, y: s.y });
+      const bottomRight = scalePoint({ x: s.x + s.width, y: s.y + s.height });
+      return {
+        ...s,
+        x: Math.min(topLeft.x, bottomRight.x),
+        y: Math.min(topLeft.y, bottomRight.y),
+        width: Math.abs(bottomRight.x - topLeft.x),
+        height: Math.abs(bottomRight.y - topLeft.y),
+      };
     }
     case 'circle': {
       const s = shape as CircleShape;
-      const r = s.radius * scale;
-      return { ...s, radius: r };
+      return { ...s, radius: s.radius * Math.abs(scale) };
     }
     case 'line': {
       const s = shape as LineShape;
-      const anchorIsP1 = Math.abs(dimension.x1 - s.x1) < 0.1 && Math.abs(dimension.y1 - s.y1) < 0.1;
-      if (anchorIsP1) {
-        const nx = s.x1 + (s.x2 - s.x1) * scale;
-        const ny = s.y1 + (s.y2 - s.y1) * scale;
-        return { ...s, x2: nx, y2: ny };
-      } else {
-        const nx = s.x2 + (s.x1 - s.x2) * scale;
-        const ny = s.y2 + (s.y1 - s.y2) * scale;
-        return { ...s, x1: nx, y1: ny };
-      }
+      const p1 = scalePoint({ x: s.x1, y: s.y1 });
+      const p2 = scalePoint({ x: s.x2, y: s.y2 });
+      return { ...s, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y };
     }
     case 'path': {
       const s = shape as PathShape;
-      const anchor = { x: dimension.x1, y: dimension.y1 };
-      return {
-        ...s,
-        points: s.points.map((p) => ({
-          x: anchor.x + (p.x - anchor.x) * scale,
-          y: anchor.y + (p.y - anchor.y) * scale,
-        })),
-      };
+      return { ...s, points: s.points.map(scalePoint) };
     }
     default:
       return shape;
