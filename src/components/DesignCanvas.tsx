@@ -12,6 +12,8 @@ type Props = {
   selectedId: string | null;
   setSelectedId: (id: string | null) => void;
   showGrid: boolean;
+  gridSize: number;
+  snapToGrid: boolean;
   showDimensions: boolean;
 };
 
@@ -31,6 +33,8 @@ export default function DesignCanvas({
   selectedId,
   setSelectedId,
   showGrid,
+  gridSize,
+  snapToGrid,
   showDimensions,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -44,15 +48,42 @@ export default function DesignCanvas({
   const [dragOffset, setDragOffset] = useState<Point>({ x: 0, y: 0 });
   const [mousePos, setMousePos] = useState<Point>({ x: 0, y: 0 });
   const [pathPoints, setPathPoints] = useState<Point[]>([]);
+  const [snapPreview, setSnapPreview] = useState<Point | null>(null);
 
   const selectedShape = shapes.find((s) => s.id === selectedId) || null;
 
   function snapPoint(pt: Point): Point {
     const originDist = Math.sqrt(pt.x ** 2 + pt.y ** 2);
-    if (originDist < 3) return { x: 0, y: 0 };
-    const snap = findNearestShapeEndpoint(shapes, pt, null, 3);
-    if (snap) return snap.point;
+    if (originDist < 4) return { x: 0, y: 0 };
+
+    const shapeSnap = findNearestShapeEndpoint(shapes, pt, null, 4);
+    if (shapeSnap) return shapeSnap.point;
+
+    const edgeSnap = snapToWorkspaceEdge(pt);
+    if (edgeSnap) return edgeSnap;
+
+    if (snapToGrid) {
+      const candidate = {
+        x: Math.round(pt.x / gridSize) * gridSize,
+        y: Math.round(pt.y / gridSize) * gridSize,
+      };
+      const threshold = Math.min(4, gridSize * 0.45);
+      if (Math.hypot(candidate.x - pt.x, candidate.y - pt.y) <= threshold) return candidate;
+    }
+
     return pt;
+  }
+
+  function snapToWorkspaceEdge(pt: Point): Point | null {
+    const threshold = 4;
+    const insideX = pt.x >= -threshold && pt.x <= workspace.width + threshold;
+    const insideY = pt.y >= -threshold && pt.y <= workspace.height + threshold;
+    if (!insideX || !insideY) return null;
+
+    const x = Math.abs(pt.x) <= threshold ? 0 : Math.abs(pt.x - workspace.width) <= threshold ? workspace.width : pt.x;
+    const y = Math.abs(pt.y) <= threshold ? 0 : Math.abs(pt.y - workspace.height) <= threshold ? workspace.height : pt.y;
+    if (x !== pt.x || y !== pt.y) return { x, y };
+    return null;
   }
 
   const screenToWorld = useCallback((sx: number, sy: number): Point => {
@@ -85,7 +116,7 @@ export default function DesignCanvas({
     const ctx = canvas.getContext('2d');
     if (ctx) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     draw();
-  }, [draw, view, shapes, tempShape, selectedId, showGrid, showDimensions, workspace, pathPoints]);
+  }, [draw, view, shapes, tempShape, selectedId, showGrid, gridSize, snapToGrid, showDimensions, workspace, pathPoints, snapPreview]);
 
   function draw() {
     const canvas = canvasRef.current;
@@ -119,11 +150,22 @@ export default function DesignCanvas({
     if (showDimensions) {
       drawDimensions(ctx);
     }
+
+    if (snapPreview) {
+      const p = worldToScreen(snapPreview.x, snapPreview.y);
+      ctx.strokeStyle = '#fbbf24';
+      ctx.fillStyle = 'rgba(251, 191, 36, 0.18)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
   }
 
   function drawGrid(ctx: CanvasRenderingContext2D, w: number, h: number) {
-    const step = 10 * MM_TO_PX * view.scale;
-    const majorStep = 50 * MM_TO_PX * view.scale;
+    const step = gridSize * MM_TO_PX * view.scale;
+    const majorStep = gridSize * 5 * MM_TO_PX * view.scale;
 
     if (step < 4) return;
 
@@ -429,7 +471,9 @@ export default function DesignCanvas({
 
   function handleMouseMove(e: React.MouseEvent) {
     const world = screenToWorld(e.clientX, e.clientY);
-    setMousePos(world);
+    const snappedWorld = tool === 'dimension' ? snapPoint(world) : world;
+    setMousePos(snappedWorld);
+    setSnapPreview(tool === 'dimension' && (snappedWorld.x !== world.x || snappedWorld.y !== world.y) ? snappedWorld : null);
 
     if (isPanning && dragStart) {
       setView((v) => ({ ...v, offsetX: e.clientX - dragStart.x, offsetY: e.clientY - dragStart.y }));
@@ -511,6 +555,7 @@ export default function DesignCanvas({
 
     setIsDrawing(false);
     setDragStart(null);
+    setSnapPreview(null);
   }
 
   function handleDoubleClick() {
@@ -556,6 +601,7 @@ export default function DesignCanvas({
       setPathPoints([]);
       setSelectedId(null);
       setTempShape(null);
+      setSnapPreview(null);
     }
   }
 

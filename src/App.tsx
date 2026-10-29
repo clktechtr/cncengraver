@@ -48,6 +48,8 @@ function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [workspace, setWorkspace] = useState<Workspace>({ width: 200, height: 200, unit: 'mm' });
   const [showGrid, setShowGrid] = useState(true);
+  const [gridSize, setGridSize] = useState(10);
+  const [snapToGrid, setSnapToGrid] = useState(false);
   const [showDimensions, setShowDimensions] = useState(true);
   const [camSettings, setCamSettings] = useState<CamSettings>(DEFAULT_CAM);
   const [gcodeLines, setGcodeLines] = useState<string[]>([]);
@@ -342,6 +344,10 @@ function App() {
         setWorkspace={setWorkspace}
         showGrid={showGrid}
         setShowGrid={setShowGrid}
+        gridSize={gridSize}
+        setGridSize={setGridSize}
+        snapToGrid={snapToGrid}
+        setSnapToGrid={setSnapToGrid}
         showDimensions={showDimensions}
         setShowDimensions={setShowDimensions}
         onClearShapes={handleClearShapes}
@@ -377,6 +383,8 @@ function App() {
                 selectedId={selectedId}
                 setSelectedId={setSelectedId}
                 showGrid={showGrid}
+                gridSize={gridSize}
+                snapToGrid={snapToGrid}
                 showDimensions={showDimensions}
               />
             )}

@@ -27,6 +27,10 @@ type Props = {
   setWorkspace: (w: Workspace) => void;
   showGrid: boolean;
   setShowGrid: (v: boolean) => void;
+  gridSize: number;
+  setGridSize: (v: number) => void;
+  snapToGrid: boolean;
+  setSnapToGrid: (v: boolean) => void;
   showDimensions: boolean;
   setShowDimensions: (v: boolean) => void;
   onClearShapes: () => void;
@@ -44,6 +48,10 @@ export default function Toolbar({
   setWorkspace,
   showGrid,
   setShowGrid,
+  gridSize,
+  setGridSize,
+  snapToGrid,
+  setSnapToGrid,
   showDimensions,
   setShowDimensions,
   onClearShapes,
@@ -182,6 +190,25 @@ export default function Toolbar({
         }`}
       >
         <Grid3x3 size={16} />
+      </button>
+      <select
+        value={gridSize}
+        onChange={(e) => setGridSize(Number(e.target.value))}
+        title="Grid spacing"
+        className="h-9 w-[62px] bg-slate-800 text-slate-300 text-xs rounded border border-slate-700 focus:border-blue-500 focus:outline-none px-1"
+      >
+        {[1, 2, 5, 10, 20, 25, 50].map((size) => (
+          <option key={size} value={size}>{size} mm</option>
+        ))}
+      </select>
+      <button
+        onClick={() => setSnapToGrid(!snapToGrid)}
+        title="Toggle grid snapping"
+        className={`flex items-center justify-center h-9 px-2 rounded text-xs transition-colors ${
+          snapToGrid ? 'bg-amber-500/20 text-amber-300' : 'text-slate-400 hover:bg-slate-800'
+        }`}
+      >
+        Snap
       </button>
       <button
         onClick={() => setShowDimensions(!showDimensions)}
