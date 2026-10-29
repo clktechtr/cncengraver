@@ -440,8 +440,10 @@ export default function DesignCanvas({
       return;
     }
 
+    const drawingPoint = snapPoint(world);
+
     if (tool === 'path') {
-      setPathPoints((prev) => [...prev, world]);
+      setPathPoints((prev) => [...prev, drawingPoint]);
       return;
     }
 
@@ -451,8 +453,8 @@ export default function DesignCanvas({
         const newShape: Shape = {
           id: genId(),
           type: 'text',
-          x: world.x,
-          y: world.y,
+          x: drawingPoint.x,
+          y: drawingPoint.y,
           text: text.trim(),
           fontSize: 10,
           font: 'cnc-stroke',
@@ -465,14 +467,14 @@ export default function DesignCanvas({
     }
 
     setIsDrawing(true);
-    setDragStart(tool === 'dimension' ? snapPoint(world) : world);
+    setDragStart(drawingPoint);
   }
 
   function handleMouseMove(e: React.MouseEvent) {
     const world = screenToWorld(e.clientX, e.clientY);
-    const snappedWorld = tool === 'dimension' ? snapPoint(world) : world;
+    const snappedWorld = tool === 'select' ? world : snapPoint(world);
     setMousePos(snappedWorld);
-    setSnapPreview(tool === 'dimension' && (snappedWorld.x !== world.x || snappedWorld.y !== world.y) ? snappedWorld : null);
+    setSnapPreview(tool !== 'select' && (snappedWorld.x !== world.x || snappedWorld.y !== world.y) ? snappedWorld : null);
 
     if (isPanning && dragStart) {
       setView((v) => ({ ...v, offsetX: e.clientX - dragStart.x, offsetY: e.clientY - dragStart.y }));
@@ -507,7 +509,7 @@ export default function DesignCanvas({
     }
 
     if (isDrawing && dragStart) {
-      const endPt = tool === 'dimension' ? snapPoint(world) : world;
+      const endPt = snapPoint(world);
       const temp = createShape(tool, dragStart, endPt);
       if (temp) setTempShape({ ...temp, id: 'temp', selected: false });
     }
