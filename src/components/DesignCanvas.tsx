@@ -433,7 +433,7 @@ export default function DesignCanvas({
       if (found) {
         setSelectedId(found.id);
         setIsDragging(true);
-        setDragOffset({ x: world.x, y: world.y });
+        setDragOffset(snapPoint(world));
       } else {
         setSelectedId(null);
       }
@@ -472,9 +472,9 @@ export default function DesignCanvas({
 
   function handleMouseMove(e: React.MouseEvent) {
     const world = screenToWorld(e.clientX, e.clientY);
-    const snappedWorld = tool === 'select' ? world : snapPoint(world);
+    const snappedWorld = tool === 'select' && !isDragging ? world : snapPoint(world);
     setMousePos(snappedWorld);
-    setSnapPreview(tool !== 'select' && (snappedWorld.x !== world.x || snappedWorld.y !== world.y) ? snappedWorld : null);
+    setSnapPreview((tool !== 'select' || isDragging) && (snappedWorld.x !== world.x || snappedWorld.y !== world.y) ? snappedWorld : null);
 
     if (isPanning && dragStart) {
       setView((v) => ({ ...v, offsetX: e.clientX - dragStart.x, offsetY: e.clientY - dragStart.y }));
@@ -482,8 +482,8 @@ export default function DesignCanvas({
     }
 
     if (isDragging && selectedId && dragOffset) {
-      const dx = world.x - dragOffset.x;
-      const dy = world.y - dragOffset.y;
+      const dx = snappedWorld.x - dragOffset.x;
+      const dy = snappedWorld.y - dragOffset.y;
       setShapes((prev) => prev.map((s) => {
         if (s.id === selectedId) return moveShape(s, dx, dy);
         if (s.type === 'dimension') {
@@ -504,7 +504,7 @@ export default function DesignCanvas({
         }
         return s;
       }));
-      setDragOffset(world);
+      setDragOffset(snappedWorld);
       return;
     }
 
