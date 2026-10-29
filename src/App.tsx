@@ -49,7 +49,7 @@ function App() {
   const [workspace, setWorkspace] = useState<Workspace>({ width: 200, height: 200, unit: 'mm' });
   const [showGrid, setShowGrid] = useState(true);
   const [gridSize, setGridSize] = useState(10);
-  const [snapToGrid, setSnapToGrid] = useState(false);
+  const [snapToGrid, setSnapToGrid] = useState(true);
   const [showDimensions, setShowDimensions] = useState(true);
   const [camSettings, setCamSettings] = useState<CamSettings>(DEFAULT_CAM);
   const [gcodeLines, setGcodeLines] = useState<string[]>([]);

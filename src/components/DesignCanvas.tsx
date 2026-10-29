@@ -67,8 +67,7 @@ export default function DesignCanvas({
         x: Math.round(pt.x / gridSize) * gridSize,
         y: Math.round(pt.y / gridSize) * gridSize,
       };
-      const threshold = Math.min(4, gridSize * 0.45);
-      if (Math.hypot(candidate.x - pt.x, candidate.y - pt.y) <= threshold) return candidate;
+      return candidate;
     }
 
     return pt;
