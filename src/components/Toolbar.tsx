@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import type { ToolType, Workspace, Shape } from '@/types';
 import { TEMPLATES } from '@/lib/templates';
 import { genId } from '@/lib/geometry';
+import type { AlignMode, DistributeAxis } from '@/lib/alignment';
 import {
   MousePointer2,
   Square,
@@ -18,6 +19,19 @@ import {
   Shapes,
   PencilRuler,
   FileType,
+  Undo2,
+  Redo2,
+  Hexagon,
+  CircleDot,
+  Scissors,
+  ArrowRightToLine,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  AlignHorizontalDistributeCenter,
+  AlignVerticalDistributeCenter,
+  LayoutGrid,
+  Maximize2,
 } from 'lucide-react';
 
 type Props = {
@@ -37,6 +51,19 @@ type Props = {
   onImportSvg: (file: File) => void;
   onUploadFont: (file: File) => void;
   onAddTemplate: (shapes: Shape[]) => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  onAlign: (mode: AlignMode) => void;
+  onDistribute: (axis: DistributeAxis) => void;
+  onOpenPattern: () => void;
+  onOpenScale: () => void;
+  selectionCount: number;
+  polygonSides: number;
+  setPolygonSides: (n: number) => void;
+  rectFromCenter: boolean;
+  setRectFromCenter: (v: boolean) => void;
   shapeCount: number;
   disabled?: boolean;
 };
@@ -58,6 +85,19 @@ export default function Toolbar({
   onImportSvg,
   onUploadFont,
   onAddTemplate,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
+  onAlign,
+  onDistribute,
+  onOpenPattern,
+  onOpenScale,
+  selectionCount,
+  polygonSides,
+  setPolygonSides,
+  rectFromCenter,
+  setRectFromCenter,
   shapeCount,
   disabled = false,
 }: Props) {
@@ -68,11 +108,16 @@ export default function Toolbar({
   const tools: { id: ToolType; icon: React.ReactNode; label: string }[] = [
     { id: 'select', icon: <MousePointer2 size={16} />, label: 'Select' },
     { id: 'rect', icon: <Square size={16} />, label: 'Rectangle' },
+    { id: 'polygon', icon: <Hexagon size={16} />, label: 'Polygon' },
     { id: 'circle', icon: <CircleIcon size={16} />, label: 'Circle' },
     { id: 'line', icon: <Minus size={16} />, label: 'Line' },
     { id: 'path', icon: <Spline size={16} />, label: 'Path' },
     { id: 'text', icon: <Type size={16} />, label: 'Text' },
     { id: 'dimension', icon: <PencilRuler size={16} />, label: 'Dimension' },
+    { id: 'radius', icon: <CircleDot size={16} />, label: 'Radius (R)' },
+    { id: 'diameter', icon: <CircleDot size={16} />, label: 'Diameter (Ø)' },
+    { id: 'trim', icon: <Scissors size={16} />, label: 'Trim' },
+    { id: 'extend', icon: <ArrowRightToLine size={16} />, label: 'Extend' },
   ];
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -116,6 +161,29 @@ export default function Toolbar({
         ))}
       </div>
 
+      {tool === 'rect' && (
+        <button
+          onClick={() => setRectFromCenter(!rectFromCenter)}
+          title="Draw rectangles from the center"
+          className={`flex items-center h-9 px-2 rounded text-xs transition-colors ${
+            rectFromCenter ? 'bg-slate-700 text-slate-200' : 'text-slate-400 hover:bg-slate-800'
+          }`}
+        >
+          From center
+        </button>
+      )}
+      {tool === 'polygon' && (
+        <select
+          value={polygonSides}
+          onChange={(e) => setPolygonSides(Number(e.target.value))}
+          title="Polygon sides"
+          className="h-9 w-[84px] bg-slate-800 text-slate-300 text-xs rounded border border-slate-700 focus:border-blue-500 focus:outline-none px-1"
+        >
+          {[3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => (
+            <option key={n} value={n}>{n} sides</option>
+          ))}
+        </select>
+      )}
       <div className="w-px h-6 bg-slate-700 mx-1" />
 
       {/* Templates dropdown */}
@@ -246,6 +314,79 @@ export default function Toolbar({
           className="w-16 bg-slate-800 text-slate-300 text-xs rounded px-2 py-1 border border-slate-700 focus:border-blue-500 focus:outline-none"
         />
         <span className="text-xs text-slate-500">{workspace.unit}</span>
+      </div>
+
+      <div className="w-px h-6 bg-slate-700 mx-1" />
+
+      <div className="flex items-center gap-0.5">
+        <button
+          onClick={onUndo}
+          disabled={!canUndo}
+          title="Undo (Ctrl+Z)"
+          className="flex items-center justify-center w-9 h-9 rounded text-slate-400 hover:bg-slate-800 hover:text-slate-200 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-400 transition-colors"
+        >
+          <Undo2 size={16} />
+        </button>
+        <button
+          onClick={onRedo}
+          disabled={!canRedo}
+          title="Redo (Ctrl+Y)"
+          className="flex items-center justify-center w-9 h-9 rounded text-slate-400 hover:bg-slate-800 hover:text-slate-200 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-400 transition-colors"
+        >
+          <Redo2 size={16} />
+        </button>
+      </div>
+
+      <div className="w-px h-6 bg-slate-700 mx-1" />
+
+      <div className="flex items-center gap-0.5">
+        {([
+          { mode: 'left', icon: <AlignLeft size={16} />, title: 'Align left' },
+          { mode: 'centerX', icon: <AlignCenter size={16} />, title: 'Align center' },
+          { mode: 'right', icon: <AlignRight size={16} />, title: 'Align right' },
+        ] as const).map((a) => (
+          <button
+            key={a.mode}
+            onClick={() => onAlign(a.mode)}
+            disabled={selectionCount < 2}
+            title={a.title}
+            className="flex items-center justify-center w-9 h-9 rounded text-slate-400 hover:bg-slate-800 hover:text-slate-200 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-400 transition-colors"
+          >
+            {a.icon}
+          </button>
+        ))}
+        <button
+          onClick={() => onDistribute('horizontal')}
+          disabled={selectionCount < 3}
+          title="Distribute horizontally"
+          className="flex items-center justify-center w-9 h-9 rounded text-slate-400 hover:bg-slate-800 hover:text-slate-200 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-400 transition-colors"
+        >
+          <AlignHorizontalDistributeCenter size={16} />
+        </button>
+        <button
+          onClick={() => onDistribute('vertical')}
+          disabled={selectionCount < 3}
+          title="Distribute vertically"
+          className="flex items-center justify-center w-9 h-9 rounded text-slate-400 hover:bg-slate-800 hover:text-slate-200 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-400 transition-colors"
+        >
+          <AlignVerticalDistributeCenter size={16} />
+        </button>
+        <button
+          onClick={onOpenPattern}
+          disabled={selectionCount < 1}
+          title="Pattern copies (linear or circular)"
+          className="flex items-center justify-center w-9 h-9 rounded text-slate-400 hover:bg-slate-800 hover:text-slate-200 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-400 transition-colors"
+        >
+          <LayoutGrid size={16} />
+        </button>
+        <button
+          onClick={onOpenScale}
+          disabled={selectionCount < 1}
+          title="Scale selection by percentage"
+          className="flex items-center justify-center w-9 h-9 rounded text-slate-400 hover:bg-slate-800 hover:text-slate-200 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-400 transition-colors"
+        >
+          <Maximize2 size={16} />
+        </button>
       </div>
 
       <div className="w-px h-6 bg-slate-700 mx-1" />

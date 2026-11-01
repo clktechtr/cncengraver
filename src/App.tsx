@@ -1,11 +1,17 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import type { Shape, ToolType, CamSettings, GCodeLine, MachineState, ConsoleEntry, Workspace } from '@/types';
 import { generateGCode, parseGCode, estimateTime } from '@/lib/gcode';
 import { SerialConnection } from '@/lib/serial';
 import { WorkerStreamer } from '@/lib/worker-streamer';
-import { genId, shapeBounds } from '@/lib/geometry';
+import { genId, shapeBounds, selectionCenter } from '@/lib/geometry';
 import { parseSvg } from '@/lib/svgImport';
 import { loadCustomFont } from '@/lib/fontManager';
+import { useShapeHistory } from '@/lib/useShapeHistory';
+import { alignShapes, distributeShapes } from '@/lib/alignment';
+import { patternCopies } from '@/lib/pattern';
+import { scaleSelection } from '@/lib/scale';
+import PatternDialog from '@/components/PatternDialog';
+import ScaleDialog from '@/components/ScaleDialog';
 import Toolbar from '@/components/Toolbar';
 import DesignCanvas from '@/components/DesignCanvas';
 import CamPanel from '@/components/CamPanel';
@@ -43,9 +49,13 @@ const DEFAULT_MACHINE: MachineState = {
 };
 
 function App() {
-  const [shapes, setShapes] = useState<Shape[]>([]);
+  const { shapes, setShapes, setShapesLive, beginEdit, endEdit, undo, redo, canUndo, canRedo } = useShapeHistory();
   const [tool, setTool] = useState<ToolType>('select');
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [polygonSides, setPolygonSides] = useState(6);
+  const [rectFromCenter, setRectFromCenter] = useState(false);
+  const [patternOpen, setPatternOpen] = useState(false);
+  const [scaleOpen, setScaleOpen] = useState(false);
   const [workspace, setWorkspace] = useState<Workspace>({ width: 200, height: 200, unit: 'mm' });
   const [showGrid, setShowGrid] = useState(true);
   const [gridSize, setGridSize] = useState(10);
@@ -67,6 +77,23 @@ function App() {
   const serialSupported = SerialConnection.isSupported();
   const carving = machine.sending;
   const gcodeReady = gcodeLines.length > 0;
+
+  useEffect(() => {
+    function handleUndoRedoKey(e: KeyboardEvent) {
+      if (carving || !(e.ctrlKey || e.metaKey)) return;
+      if ((e.target as HTMLElement).closest('input, textarea, select, [contenteditable="true"]')) return;
+      const key = e.key.toLowerCase();
+      if (key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+      } else if (key === 'y' || (key === 'z' && e.shiftKey)) {
+        e.preventDefault();
+        redo();
+      }
+    }
+    window.addEventListener('keydown', handleUndoRedoKey);
+    return () => window.removeEventListener('keydown', handleUndoRedoKey);
+  }, [carving, undo, redo]);
 
   const addConsoleEntry = useCallback((direction: ConsoleEntry['direction'], text: string) => {
     setConsoleEntries((prev) => [...prev.slice(-200), {
@@ -256,7 +283,7 @@ function App() {
 
   const handleClearShapes = useCallback(() => {
     setShapes([]);
-    setSelectedId(null);
+    setSelectedIds([]);
   }, []);
 
   const handleAddTemplate = useCallback((templateShapes: Shape[]) => {
@@ -337,6 +364,29 @@ function App() {
         </div>
       </header>
 
+      {patternOpen && (
+        <PatternDialog
+          selectionCount={selectedIds.length}
+          defaultCenter={selectionCenter(shapes.filter((s) => selectedIds.includes(s.id)))}
+          onClose={() => setPatternOpen(false)}
+          onApply={(settings) => {
+            setShapes((prev) => [...prev, ...patternCopies(prev.filter((s) => selectedIds.includes(s.id)), settings)]);
+            setPatternOpen(false);
+          }}
+        />
+      )}
+
+      {scaleOpen && (
+        <ScaleDialog
+          selectionCount={selectedIds.length}
+          onClose={() => setScaleOpen(false)}
+          onApply={(percent) => {
+            setShapes((prev) => scaleSelection(prev, selectedIds, percent));
+            setScaleOpen(false);
+          }}
+        />
+      )}
+
       <Toolbar
         tool={tool}
         setTool={setTool}
@@ -354,6 +404,19 @@ function App() {
         onImportSvg={handleImportSvg}
         onUploadFont={handleUploadFont}
         onAddTemplate={handleAddTemplate}
+        onUndo={undo}
+        onAlign={(mode) => setShapes((prev) => alignShapes(prev, selectedIds, mode))}
+        onDistribute={(axis) => setShapes((prev) => distributeShapes(prev, selectedIds, axis))}
+        onOpenPattern={() => setPatternOpen(true)}
+        onOpenScale={() => setScaleOpen(true)}
+        selectionCount={selectedIds.length}
+        polygonSides={polygonSides}
+        setPolygonSides={setPolygonSides}
+        rectFromCenter={rectFromCenter}
+        setRectFromCenter={setRectFromCenter}
+        onRedo={redo}
+        canUndo={canUndo}
+        canRedo={canRedo}
         shapeCount={shapes.length}
         disabled={carving}
       />
@@ -378,10 +441,15 @@ function App() {
               <DesignCanvas
                 shapes={shapes}
                 setShapes={setShapes}
+                setShapesLive={setShapesLive}
+                beginEdit={beginEdit}
+                endEdit={endEdit}
                 tool={tool}
                 workspace={workspace}
-                selectedId={selectedId}
-                setSelectedId={setSelectedId}
+                selectedIds={selectedIds}
+                polygonSides={polygonSides}
+                rectFromCenter={rectFromCenter}
+                setSelectedIds={setSelectedIds}
                 showGrid={showGrid}
                 gridSize={gridSize}
                 snapToGrid={snapToGrid}

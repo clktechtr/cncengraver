@@ -1,4 +1,4 @@
-export type ToolType = 'select' | 'rect' | 'circle' | 'line' | 'text' | 'path' | 'dimension';
+export type ToolType = 'select' | 'rect' | 'circle' | 'line' | 'text' | 'path' | 'dimension' | 'polygon' | 'radius' | 'diameter' | 'trim' | 'extend';
 
 export type Point = { x: number; y: number };
 
@@ -38,6 +38,7 @@ export type TextShape = ShapeBase & {
   text: string;
   fontSize: number;
   font: string;
+  rotation?: number;
 };
 
 export type PathShape = ShapeBase & {
@@ -56,6 +57,7 @@ export type DimensionShape = ShapeBase & {
   targetEndId?: string;
   anchorStart?: Point;
   anchorEnd?: Point;
+  circleMode?: 'radius' | 'diameter';
 };
 
 export type Shape = RectShape | CircleShape | LineShape | TextShape | PathShape | DimensionShape;

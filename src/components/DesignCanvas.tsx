@@ -1,20 +1,27 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
-import type { Shape, Point, ToolType, Workspace } from '@/types';
-import { pointInShape, shapeBounds, genId, resizeShapeByDimension, findNearestShapeEndpoint } from '@/lib/geometry';
+import type { Shape, Point, ToolType, Workspace, DimensionShape } from '@/types';
+import { pointInShape, shapeBounds, genId, resizeShapeByDimension, findNearestShapeEndpoint, transformShape, transformDimensionAnchors, isDimensionAnchoredTo, translateShapes, findCircleNear, circleDimensionEnds, applyCircleDimension } from '@/lib/geometry';
+import type { Transform } from '@/lib/geometry';
 import { textToPathPoints } from '@/lib/gcode';
+import { trimLineAt, extendLineAt } from '@/lib/trimExtend';
 import { getAllFonts } from '@/lib/fontManager';
 
 type Props = {
   shapes: Shape[];
   setShapes: (updater: (prev: Shape[]) => Shape[]) => void;
+  setShapesLive: (updater: (prev: Shape[]) => Shape[]) => void;
+  beginEdit: () => void;
+  endEdit: () => void;
   tool: ToolType;
   workspace: Workspace;
-  selectedId: string | null;
-  setSelectedId: (id: string | null) => void;
+  selectedIds: string[];
+  setSelectedIds: (ids: string[]) => void;
   showGrid: boolean;
   gridSize: number;
   snapToGrid: boolean;
   showDimensions: boolean;
+  polygonSides: number;
+  rectFromCenter: boolean;
 };
 
 type ViewState = {
@@ -24,18 +31,49 @@ type ViewState = {
 };
 
 const MM_TO_PX = 4;
+const HANDLE_HALF = 4;
+const HANDLE_RADIUS = 5;
+const HANDLE_TOLERANCE_PX = 9;
+const ROTATE_HANDLE_OFFSET_PX = 28;
+const ROTATE_SNAP_DEG = 15;
+const CORNER_HANDLES = ['nw', 'ne', 'se', 'sw'] as const;
+const HANDLE_CURSOR: Record<HandleId, string> = {
+  nw: 'nwse-resize',
+  se: 'nwse-resize',
+  ne: 'nesw-resize',
+  sw: 'nesw-resize',
+  rotate: 'grab',
+};
+
+type HandleId = 'nw' | 'ne' | 'se' | 'sw' | 'rotate';
+
+type TransformDrag = {
+  handle: HandleId;
+  shapeId: string;
+  original: Shape;
+  dimensions: DimensionShape[];
+  pivot: Point;
+  startRaw: Point;
+  startSnapped: Point;
+  baseRotation: number;
+};
 
 export default function DesignCanvas({
   shapes,
   setShapes,
+  setShapesLive,
+  beginEdit,
+  endEdit,
   tool,
   workspace,
-  selectedId,
-  setSelectedId,
+  selectedIds,
+  setSelectedIds,
   showGrid,
   gridSize,
   snapToGrid,
   showDimensions,
+  polygonSides,
+  rectFromCenter,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -49,8 +87,10 @@ export default function DesignCanvas({
   const [mousePos, setMousePos] = useState<Point>({ x: 0, y: 0 });
   const [pathPoints, setPathPoints] = useState<Point[]>([]);
   const [snapPreview, setSnapPreview] = useState<Point | null>(null);
+  const [transformDrag, setTransformDrag] = useState<TransformDrag | null>(null);
+  const [hoverHandle, setHoverHandle] = useState<HandleId | null>(null);
 
-  const selectedShape = shapes.find((s) => s.id === selectedId) || null;
+  const selectedShape = selectedIds.length === 1 ? shapes.find((s) => s.id === selectedIds[0]) || null : null;
 
   function snapPoint(pt: Point): Point {
     const originDist = Math.sqrt(pt.x ** 2 + pt.y ** 2);
@@ -115,7 +155,7 @@ export default function DesignCanvas({
     const ctx = canvas.getContext('2d');
     if (ctx) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     draw();
-  }, [draw, view, shapes, tempShape, selectedId, showGrid, gridSize, snapToGrid, showDimensions, workspace, pathPoints, snapPreview]);
+  }, [draw, view, shapes, tempShape, selectedIds, showGrid, gridSize, snapToGrid, showDimensions, workspace, pathPoints, snapPreview]);
 
   function draw() {
     const canvas = canvasRef.current;
@@ -135,7 +175,7 @@ export default function DesignCanvas({
     drawWorkspace(ctx, w, h);
 
     for (const shape of shapes) {
-      drawShape(ctx, shape, shape.id === selectedId);
+      drawShape(ctx, shape, selectedIds.includes(shape.id));
     }
 
     if (tempShape) drawShape(ctx, tempShape, true);
@@ -148,6 +188,10 @@ export default function DesignCanvas({
 
     if (showDimensions) {
       drawDimensions(ctx);
+    }
+
+    if (tool === 'select' && selectedShape && selectedShape.type !== 'dimension') {
+      drawTransformHandles(ctx, selectedShape);
     }
 
     if (snapPreview) {
@@ -399,6 +443,58 @@ export default function DesignCanvas({
     ctx.restore();
   }
 
+  function drawTransformHandles(ctx: CanvasRenderingContext2D, shape: Shape) {
+    const handles = getHandlePositions(shape, 1 / (MM_TO_PX * view.scale));
+    const b = shapeBounds(shape);
+    const topMid = worldToScreen((b.minX + b.maxX) / 2, b.maxY);
+    const rotate = worldToScreen(handles.rotate.x, handles.rotate.y);
+
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(topMid.x, topMid.y);
+    ctx.lineTo(rotate.x, rotate.y);
+    ctx.stroke();
+
+    ctx.fillStyle = hoverHandle === 'rotate' ? '#f59e0b' : '#0a0e14';
+    ctx.beginPath();
+    ctx.arc(rotate.x, rotate.y, HANDLE_RADIUS, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    for (const id of CORNER_HANDLES) {
+      const p = worldToScreen(handles[id].x, handles[id].y);
+      ctx.fillStyle = hoverHandle === id ? '#f59e0b' : '#0a0e14';
+      ctx.fillRect(p.x - HANDLE_HALF, p.y - HANDLE_HALF, HANDLE_HALF * 2, HANDLE_HALF * 2);
+      ctx.strokeRect(p.x - HANDLE_HALF, p.y - HANDLE_HALF, HANDLE_HALF * 2, HANDLE_HALF * 2);
+    }
+  }
+
+  function findHandleAt(world: Point, shape: Shape): HandleId | null {
+    const mmPerPx = 1 / (MM_TO_PX * view.scale);
+    const handles = getHandlePositions(shape, mmPerPx);
+    const tolerance = HANDLE_TOLERANCE_PX * mmPerPx;
+    for (const id of [...CORNER_HANDLES, 'rotate'] as HandleId[]) {
+      if (Math.hypot(world.x - handles[id].x, world.y - handles[id].y) <= tolerance) return id;
+    }
+    return null;
+  }
+
+  function startTransform(shape: Shape, handle: HandleId, world: Point) {
+    beginEdit();
+    const b = shapeBounds(shape);
+    setTransformDrag({
+      handle,
+      shapeId: shape.id,
+      original: shape,
+      dimensions: shapes.filter((s): s is DimensionShape => s.type === 'dimension' && isDimensionAnchoredTo(s, shape.id)),
+      pivot: { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 },
+      startRaw: world,
+      startSnapped: snapPoint(world),
+      baseRotation: shape.type === 'text' ? shape.rotation ?? 0 : 0,
+    });
+  }
+
   useEffect(() => {
     resizeCanvas();
   }, [resizeCanvas]);
@@ -423,6 +519,13 @@ export default function DesignCanvas({
     }
 
     if (tool === 'select') {
+      const selected = selectedShape && selectedShape.type !== 'dimension' ? selectedShape : null;
+      const handle = selected ? findHandleAt(world, selected) : null;
+      if (selected && handle) {
+        startTransform(selected, handle, world);
+        return;
+      }
+
       let found: Shape | null = null;
       for (let i = shapes.length - 1; i >= 0; i--) {
         if (pointInShape(world, shapes[i])) {
@@ -430,12 +533,28 @@ export default function DesignCanvas({
           break;
         }
       }
-      if (found) {
-        setSelectedId(found.id);
-        setIsDragging(true);
-        setDragOffset(snapPoint(world));
-      } else {
-        setSelectedId(null);
+      const modifier = e.ctrlKey || e.metaKey;
+      if (!found) {
+        if (!modifier) setSelectedIds([]);
+        return;
+      }
+      if (modifier) {
+        setSelectedIds(selectedIds.includes(found.id) ? selectedIds.filter((id) => id !== found.id) : [...selectedIds, found.id]);
+        return;
+      }
+      if (!selectedIds.includes(found.id)) setSelectedIds([found.id]);
+      beginEdit();
+      setIsDragging(true);
+      setDragOffset(snapPoint(world));
+      return;
+    }
+
+    if (tool === 'trim' || tool === 'extend') {
+      const tolerance = 4 / (MM_TO_PX * view.scale);
+      const next = tool === 'trim' ? trimLineAt(shapes, world, tolerance) : extendLineAt(shapes, world, tolerance);
+      if (next) {
+        setShapes(() => next);
+        setSelectedIds([]);
       }
       return;
     }
@@ -461,8 +580,25 @@ export default function DesignCanvas({
           selected: false,
         } as Shape;
         setShapes((prev) => [...prev, newShape]);
-        setSelectedId(newShape.id);
+        setSelectedIds([newShape.id]);
       }
+      return;
+    }
+
+    if (tool === 'radius' || tool === 'diameter') {
+      const mode = tool === 'radius' ? 'radius' : 'diameter';
+      const circle = findCircleNear(shapes, world, 4 / (MM_TO_PX * view.scale));
+      if (!circle) return;
+      const dimension = {
+        id: genId(),
+        type: 'dimension',
+        selected: false,
+        ...circleDimensionEnds(circle, mode),
+        targetId: circle.id,
+        circleMode: mode,
+      } as Shape;
+      setShapes((prev) => [...prev, dimension]);
+      setSelectedIds([dimension.id]);
       return;
     }
 
@@ -472,50 +608,53 @@ export default function DesignCanvas({
 
   function handleMouseMove(e: React.MouseEvent) {
     const world = screenToWorld(e.clientX, e.clientY);
-    const snappedWorld = tool === 'select' && !isDragging ? world : snapPoint(world);
+    const snapping = tool !== 'select' || isDragging || !!transformDrag;
+    const snappedWorld = snapping ? snapPoint(world) : world;
     setMousePos(snappedWorld);
-    setSnapPreview((tool !== 'select' || isDragging) && (snappedWorld.x !== world.x || snappedWorld.y !== world.y) ? snappedWorld : null);
+    setSnapPreview(snapping && (snappedWorld.x !== world.x || snappedWorld.y !== world.y) ? snappedWorld : null);
+
+    if (transformDrag) {
+      const t = computeTransform(transformDrag, world, snappedWorld, snapToGrid);
+      const next = transformShape(transformDrag.original, t);
+      setShapesLive((prev) => prev.map((s) => {
+        if (s.id === transformDrag.shapeId) return next;
+        const dim = transformDrag.dimensions.find((d) => d.id === s.id);
+        return dim ? transformDimensionAnchors(dim, transformDrag.shapeId, t) : s;
+      }));
+      return;
+    }
+
+    if (tool === 'select' && !isDragging && !isPanning) {
+      setHoverHandle(selectedShape && selectedShape.type !== 'dimension' ? findHandleAt(world, selectedShape) : null);
+    }
 
     if (isPanning && dragStart) {
       setView((v) => ({ ...v, offsetX: e.clientX - dragStart.x, offsetY: e.clientY - dragStart.y }));
       return;
     }
 
-    if (isDragging && selectedId && dragOffset) {
+    if (isDragging && selectedIds.length > 0 && dragOffset) {
       const dx = snappedWorld.x - dragOffset.x;
       const dy = snappedWorld.y - dragOffset.y;
-      setShapes((prev) => prev.map((s) => {
-        if (s.id === selectedId) return moveShape(s, dx, dy);
-        if (s.type === 'dimension') {
-          const hasStartAnchor = s.targetStartId === selectedId || (!s.targetStartId && s.targetId === selectedId && !!s.anchorStart);
-          const hasEndAnchor = s.targetEndId === selectedId || (!s.targetEndId && s.targetId === selectedId && !!s.anchorEnd);
-          const legacyTarget = !s.targetStartId && !s.targetEndId && s.targetId === selectedId && !s.anchorStart && !s.anchorEnd;
-          if (hasStartAnchor || hasEndAnchor || legacyTarget) {
-            return {
-              ...s,
-              x1: hasStartAnchor || legacyTarget ? s.x1 + dx : s.x1,
-              y1: hasStartAnchor || legacyTarget ? s.y1 + dy : s.y1,
-              x2: hasEndAnchor || legacyTarget ? s.x2 + dx : s.x2,
-              y2: hasEndAnchor || legacyTarget ? s.y2 + dy : s.y2,
-              anchorStart: hasStartAnchor && s.anchorStart ? { x: s.anchorStart.x + dx, y: s.anchorStart.y + dy } : s.anchorStart,
-              anchorEnd: hasEndAnchor && s.anchorEnd ? { x: s.anchorEnd.x + dx, y: s.anchorEnd.y + dy } : s.anchorEnd,
-            };
-          }
-        }
-        return s;
-      }));
+      setShapesLive((prev) => translateShapes(prev, selectedIds, dx, dy));
       setDragOffset(snappedWorld);
       return;
     }
 
     if (isDrawing && dragStart) {
       const endPt = snapPoint(world);
-      const temp = createShape(tool, dragStart, endPt);
+      const temp = createShape(tool, dragStart, endPt, { polygonSides, rectFromCenter });
       if (temp) setTempShape({ ...temp, id: 'temp', selected: false });
     }
   }
 
   function handleMouseUp(_e: React.MouseEvent) {
+    if (transformDrag) {
+      setTransformDrag(null);
+      endEdit();
+      return;
+    }
+
     if (isPanning) {
       setIsPanning(false);
       setDragStart(null);
@@ -525,6 +664,7 @@ export default function DesignCanvas({
     if (isDragging) {
       setIsDragging(false);
       setDragStart(null);
+      endEdit();
       return;
     }
 
@@ -550,7 +690,7 @@ export default function DesignCanvas({
         }
       }
       setShapes((prev) => [...prev, newShape]);
-      setSelectedId(newShape.id);
+      setSelectedIds([newShape.id]);
       setTempShape(null);
     }
 
@@ -568,7 +708,7 @@ export default function DesignCanvas({
         selected: false,
       };
       setShapes((prev) => [...prev, newShape]);
-      setSelectedId(newShape.id);
+      setSelectedIds([newShape.id]);
       setPathPoints([]);
     }
   }
@@ -593,14 +733,14 @@ export default function DesignCanvas({
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === 'Delete' || e.key === 'Backspace') {
-      if (selectedId && tool === 'select') {
-        setShapes((prev) => prev.filter((s) => s.id !== selectedId));
-        setSelectedId(null);
+      if (selectedIds.length > 0 && tool === 'select') {
+        setShapes((prev) => prev.filter((s) => !selectedIds.includes(s.id)));
+        setSelectedIds([]);
       }
     }
     if (e.key === 'Escape') {
       setPathPoints([]);
-      setSelectedId(null);
+      setSelectedIds([]);
       setTempShape(null);
       setSnapPreview(null);
     }
@@ -622,13 +762,16 @@ export default function DesignCanvas({
         onMouseLeave={handleMouseUp}
         onDoubleClick={handleDoubleClick}
         onWheel={handleWheel}
-        style={{ cursor: tool === 'select' ? 'default' : 'crosshair' }}
+        style={{ cursor: tool === 'select' ? (hoverHandle ? HANDLE_CURSOR[hoverHandle] : 'default') : 'crosshair' }}
       />
       <div className="absolute bottom-3 left-3 flex items-center gap-3 text-xs font-mono text-slate-400 bg-slate-900/80 px-3 py-1.5 rounded-md border border-slate-700/50">
         <span>X: {mousePos.x.toFixed(1)}mm</span>
         <span>Y: {mousePos.y.toFixed(1)}mm</span>
         <span className="text-slate-600">|</span>
         <span>Zoom: {(view.scale * 100).toFixed(0)}%</span>
+        {selectedShape && selectedShape.type !== 'dimension' && tool === 'select' && (
+          <span className="text-slate-500">Drag corners to scale, top handle to rotate</span>
+        )}
         {tool === 'path' && pathPoints.length > 0 && (
           <span className="text-amber-400">Points: {pathPoints.length} (double-click to finish)</span>
         )}
@@ -712,7 +855,7 @@ export default function DesignCanvas({
         return (
           <div className="absolute top-3 left-3 flex items-center gap-2 bg-slate-900/90 px-3 py-2 rounded-lg border border-slate-700/50 shadow-xl">
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-              {isFromOrigin ? 'From Origin' : 'Dimension'}
+              {dim.circleMode === 'radius' ? 'Radius' : dim.circleMode === 'diameter' ? 'Diameter' : isFromOrigin ? 'From Origin' : 'Dimension'}
             </span>
             <input
               type="number"
@@ -724,6 +867,12 @@ export default function DesignCanvas({
                 if (e.key === 'Enter') {
                   const val = parseFloat((e.target as HTMLInputElement).value);
                   if (isNaN(val) || val <= 0) return;
+                  if (dim.circleMode && target?.type === 'circle') {
+                    const circleId = target.id;
+                    setShapes((prev) => applyCircleDimension(prev, circleId, dim.id, dim.circleMode, val));
+                    (e.target as HTMLInputElement).blur();
+                    return;
+                  }
                   setShapes((prev) => {
                     const ratio = val / dist;
                     const nextTarget = target
@@ -788,35 +937,70 @@ export default function DesignCanvas({
   );
 }
 
-function moveShape(shape: Shape, dx: number, dy: number): Shape {
-  switch (shape.type) {
-    case 'rect':
-      return { ...shape, x: shape.x + dx, y: shape.y + dy };
-    case 'circle':
-      return { ...shape, cx: shape.cx + dx, cy: shape.cy + dy };
-    case 'line':
-      return { ...shape, x1: shape.x1 + dx, y1: shape.y1 + dy, x2: shape.x2 + dx, y2: shape.y2 + dy };
-    case 'text':
-      return { ...shape, x: shape.x + dx, y: shape.y + dy };
-    case 'path':
-      return { ...shape, points: shape.points.map((p) => ({ x: p.x + dx, y: p.y + dy })) };
-    case 'dimension':
-      return { ...shape, x1: shape.x1 + dx, y1: shape.y1 + dy, x2: shape.x2 + dx, y2: shape.y2 + dy };
-  }
+function getHandlePositions(shape: Shape, mmPerPx: number): Record<HandleId, Point> {
+  const b = shapeBounds(shape);
+  return {
+    nw: { x: b.minX, y: b.maxY },
+    ne: { x: b.maxX, y: b.maxY },
+    se: { x: b.maxX, y: b.minY },
+    sw: { x: b.minX, y: b.minY },
+    rotate: { x: (b.minX + b.maxX) / 2, y: b.maxY + ROTATE_HANDLE_OFFSET_PX * mmPerPx },
+  };
 }
 
-function createShape(tool: ToolType, start: Point, end: Point): Shape | null {
+function computeTransform(drag: TransformDrag, raw: Point, snapped: Point, snapOn: boolean): Transform {
+  if (drag.handle === 'rotate') {
+    const startAngle = Math.atan2(drag.startRaw.y - drag.pivot.y, drag.startRaw.x - drag.pivot.x);
+    const angle = Math.atan2(raw.y - drag.pivot.y, raw.x - drag.pivot.x);
+    let total = drag.baseRotation + ((angle - startAngle) * 180) / Math.PI;
+    if (snapOn) total = Math.round(total / ROTATE_SNAP_DEG) * ROTATE_SNAP_DEG;
+    return { pivot: drag.pivot, scale: 1, rotation: total - drag.baseRotation };
+  }
+  const startDist = Math.hypot(drag.startSnapped.x - drag.pivot.x, drag.startSnapped.y - drag.pivot.y);
+  const currentDist = Math.hypot(snapped.x - drag.pivot.x, snapped.y - drag.pivot.y);
+  const scale = startDist < 0.01 ? 1 : Math.max(0.05, currentDist / startDist);
+  return { pivot: drag.pivot, scale, rotation: 0 };
+}
+
+type DrawOptions = { polygonSides: number; rectFromCenter: boolean };
+
+function regularPolygonPoints(center: Point, radius: number, angle: number, sides: number): Point[] {
+  const points: Point[] = [];
+  for (let i = 0; i <= sides; i++) {
+    const a = angle + (2 * Math.PI * i) / sides;
+    points.push({ x: center.x + radius * Math.cos(a), y: center.y + radius * Math.sin(a) });
+  }
+  return points;
+}
+
+function createShape(tool: ToolType, start: Point, end: Point, options: DrawOptions): Shape | null {
   const base = { id: 'temp', selected: false };
   switch (tool) {
-    case 'rect':
+    case 'rect': {
+      const w = Math.abs(end.x - start.x);
+      const h = Math.abs(end.y - start.y);
+      if (options.rectFromCenter) {
+        return { ...base, type: 'rect', x: start.x - w, y: start.y - h, width: 2 * w, height: 2 * h };
+      }
       return {
         ...base,
         type: 'rect',
         x: Math.min(start.x, end.x),
         y: Math.min(start.y, end.y),
-        width: Math.abs(end.x - start.x),
-        height: Math.abs(end.y - start.y),
+        width: w,
+        height: h,
       };
+    }
+    case 'polygon': {
+      const radius = Math.hypot(end.x - start.x, end.y - start.y);
+      if (radius < 0.01) return null;
+      const angle = Math.atan2(end.y - start.y, end.x - start.x);
+      return {
+        ...base,
+        type: 'path',
+        points: regularPolygonPoints(start, radius, angle, options.polygonSides),
+      };
+    }
     case 'circle': {
       const r = Math.sqrt((end.x - start.x) ** 2 + (end.y - start.y) ** 2);
       return { ...base, type: 'circle', cx: start.x, cy: start.y, radius: r };

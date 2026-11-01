@@ -1,5 +1,5 @@
 import type { Shape, CamSettings, GCodeLine, Point, TextShape } from '@/types';
-import { shapeToPathPoints, offsetPath, shapeBounds } from '@/lib/geometry';
+import { shapeToPathPoints, offsetPath, shapeBounds, transformPoint } from '@/lib/geometry';
 import { fontToPathPoints, isCustomFont, isCncStrokeFont, isSystemFont, systemFontToPathPoints } from '@/lib/fontManager';
 
 const TEXT_CHAR_PATHS: Record<string, Point[][]> = {
@@ -43,6 +43,13 @@ const TEXT_CHAR_PATHS: Record<string, Point[][]> = {
 };
 
 export function textToPathPoints(shape: TextShape): Point[][] {
+  const paths = layoutTextPaths(shape);
+  if (!shape.rotation) return paths;
+  const t = { pivot: { x: shape.x, y: shape.y }, scale: 1, rotation: shape.rotation };
+  return paths.map((path) => path.map((p) => transformPoint(p, t)));
+}
+
+function layoutTextPaths(shape: TextShape): Point[][] {
   const fontId = (shape as any).font || 'cnc-stroke';
   if (isCustomFont(fontId)) {
     return fontToPathPoints(shape.text, shape.x, shape.y, shape.fontSize, fontId);

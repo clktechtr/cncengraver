@@ -1,5 +1,97 @@
 import type { Point, Shape, RectShape, CircleShape, LineShape, TextShape, PathShape, DimensionShape } from '@/types';
 
+export type Transform = { pivot: Point; scale: number; rotation: number };
+
+export function transformPoint(p: Point, t: Transform): Point {
+  const rad = (t.rotation * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const dx = (p.x - t.pivot.x) * t.scale;
+  const dy = (p.y - t.pivot.y) * t.scale;
+  return { x: t.pivot.x + dx * cos - dy * sin, y: t.pivot.y + dx * sin + dy * cos };
+}
+
+function boundsOf(points: Point[]) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of points) {
+    minX = Math.min(minX, p.x);
+    minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x);
+    maxY = Math.max(maxY, p.y);
+  }
+  return { minX, minY, maxX, maxY };
+}
+
+function isRightAngle(deg: number): boolean {
+  const q = deg / 90;
+  return Math.abs(q - Math.round(q)) < 1e-9;
+}
+
+export function transformShape(shape: Shape, t: Transform): Shape {
+  switch (shape.type) {
+    case 'rect': {
+      const s = shape as RectShape;
+      const corners = [
+        { x: s.x, y: s.y },
+        { x: s.x + s.width, y: s.y },
+        { x: s.x + s.width, y: s.y + s.height },
+        { x: s.x, y: s.y + s.height },
+      ].map((p) => transformPoint(p, t));
+      if (isRightAngle(t.rotation)) {
+        const b = boundsOf(corners);
+        return { ...s, x: b.minX, y: b.minY, width: b.maxX - b.minX, height: b.maxY - b.minY };
+      }
+      const path: PathShape = {
+        id: s.id,
+        type: 'path',
+        selected: s.selected,
+        points: [...corners, corners[0]],
+      };
+      return path;
+    }
+    case 'circle': {
+      const s = shape as CircleShape;
+      const c = transformPoint({ x: s.cx, y: s.cy }, t);
+      return { ...s, cx: c.x, cy: c.y, radius: s.radius * t.scale };
+    }
+    case 'line': {
+      const s = shape as LineShape;
+      const p1 = transformPoint({ x: s.x1, y: s.y1 }, t);
+      const p2 = transformPoint({ x: s.x2, y: s.y2 }, t);
+      return { ...s, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y };
+    }
+    case 'text': {
+      const s = shape as TextShape;
+      const a = transformPoint({ x: s.x, y: s.y }, t);
+      const rotation = (((s.rotation ?? 0) + t.rotation) % 360 + 360) % 360;
+      return { ...s, x: a.x, y: a.y, fontSize: s.fontSize * t.scale, rotation };
+    }
+    case 'path': {
+      const s = shape as PathShape;
+      return { ...s, points: s.points.map((p) => transformPoint(p, t)) };
+    }
+    case 'dimension':
+      return shape;
+  }
+}
+
+export function isDimensionAnchoredTo(dim: DimensionShape, shapeId: string): boolean {
+  return dim.targetStartId === shapeId || dim.targetEndId === shapeId;
+}
+
+export function transformDimensionAnchors(dim: DimensionShape, shapeId: string, t: Transform): DimensionShape {
+  let next = dim;
+  if (dim.targetStartId === shapeId && dim.anchorStart) {
+    const a = transformPoint(dim.anchorStart, t);
+    next = { ...next, x1: a.x, y1: a.y, anchorStart: a };
+  }
+  if (dim.targetEndId === shapeId && dim.anchorEnd) {
+    const a = transformPoint(dim.anchorEnd, t);
+    next = { ...next, x2: a.x, y2: a.y, anchorEnd: a };
+  }
+  return next;
+}
+
 export function shapeBounds(shape: Shape) {
   switch (shape.type) {
     case 'rect': {
@@ -17,7 +109,14 @@ export function shapeBounds(shape: Shape) {
     case 'text': {
       const s = shape as TextShape;
       const w = s.text.length * s.fontSize * 0.6;
-      return { minX: s.x, minY: s.y - s.fontSize, maxX: s.x + w, maxY: s.y };
+      const pivot = { x: s.x, y: s.y };
+      const corners = [
+        { x: s.x, y: s.y - s.fontSize },
+        { x: s.x + w, y: s.y - s.fontSize },
+        { x: s.x + w, y: s.y },
+        { x: s.x, y: s.y },
+      ].map((p) => transformPoint(p, { pivot, scale: 1, rotation: s.rotation ?? 0 }));
+      return boundsOf(corners);
     }
     case 'path': {
       const s = shape as PathShape;
@@ -58,7 +157,8 @@ export function pointInShape(point: Point, shape: Shape): boolean {
     case 'text': {
       const s = shape as TextShape;
       const w = s.text.length * s.fontSize * 0.6;
-      return point.x >= s.x && point.x <= s.x + w && point.y >= s.y - s.fontSize && point.y <= s.y;
+      const local = transformPoint(point, { pivot: { x: s.x, y: s.y }, scale: 1, rotation: -(s.rotation ?? 0) });
+      return local.x >= s.x && local.x <= s.x + w && local.y >= s.y - s.fontSize && local.y <= s.y;
     }
     case 'path': {
       const s = shape as PathShape;
@@ -75,7 +175,7 @@ export function pointInShape(point: Point, shape: Shape): boolean {
   }
 }
 
-function pointToSegmentDist(p: Point, a: Point, b: Point): number {
+export function pointToSegmentDist(p: Point, a: Point, b: Point): number {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
   const lenSq = dx * dx + dy * dy;
@@ -157,6 +257,62 @@ export function offsetPath(points: Point[], offset: number): Point[] {
   return result;
 }
 
+export function moveShape(shape: Shape, dx: number, dy: number): Shape {
+  switch (shape.type) {
+    case 'rect':
+      return { ...shape, x: shape.x + dx, y: shape.y + dy };
+    case 'circle':
+      return { ...shape, cx: shape.cx + dx, cy: shape.cy + dy };
+    case 'line':
+      return { ...shape, x1: shape.x1 + dx, y1: shape.y1 + dy, x2: shape.x2 + dx, y2: shape.y2 + dy };
+    case 'text':
+      return { ...shape, x: shape.x + dx, y: shape.y + dy };
+    case 'path':
+      return { ...shape, points: shape.points.map((p) => ({ x: p.x + dx, y: p.y + dy })) };
+    case 'dimension':
+      return { ...shape, x1: shape.x1 + dx, y1: shape.y1 + dy, x2: shape.x2 + dx, y2: shape.y2 + dy };
+  }
+}
+
+export function translateShapes(shapes: Shape[], ids: string[], dx: number, dy: number): Shape[] {
+  const idSet = new Set(ids);
+  return shapes.map((s) => {
+    if (idSet.has(s.id)) return moveShape(s, dx, dy);
+    if (s.type === 'dimension') return translateDimensionAnchors(s, idSet, dx, dy);
+    return s;
+  });
+}
+
+function translateDimensionAnchors(dim: DimensionShape, ids: Set<string>, dx: number, dy: number): DimensionShape {
+  const linked = (id?: string) => id !== undefined && ids.has(id);
+  const hasStart = linked(dim.targetStartId) || (!dim.targetStartId && linked(dim.targetId) && !!dim.anchorStart);
+  const hasEnd = linked(dim.targetEndId) || (!dim.targetEndId && linked(dim.targetId) && !!dim.anchorEnd);
+  const legacy = !dim.targetStartId && !dim.targetEndId && linked(dim.targetId) && !dim.anchorStart && !dim.anchorEnd;
+  if (!hasStart && !hasEnd && !legacy) return dim;
+  return {
+    ...dim,
+    x1: hasStart || legacy ? dim.x1 + dx : dim.x1,
+    y1: hasStart || legacy ? dim.y1 + dy : dim.y1,
+    x2: hasEnd || legacy ? dim.x2 + dx : dim.x2,
+    y2: hasEnd || legacy ? dim.y2 + dy : dim.y2,
+    anchorStart: hasStart && dim.anchorStart ? { x: dim.anchorStart.x + dx, y: dim.anchorStart.y + dy } : dim.anchorStart,
+    anchorEnd: hasEnd && dim.anchorEnd ? { x: dim.anchorEnd.x + dx, y: dim.anchorEnd.y + dy } : dim.anchorEnd,
+  };
+}
+
+export function selectionCenter(shapes: Shape[]): Point {
+  if (shapes.length === 0) return { x: 0, y: 0 };
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const s of shapes) {
+    const b = shapeBounds(s);
+    minX = Math.min(minX, b.minX);
+    minY = Math.min(minY, b.minY);
+    maxX = Math.max(maxX, b.maxX);
+    maxY = Math.max(maxY, b.maxY);
+  }
+  return { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+}
+
 export function genId(): string {
   return Math.random().toString(36).substring(2, 11);
 }
@@ -212,6 +368,45 @@ export function resizeShapeByDimension(
   }
 }
 
+export function circleDimensionEnds(circle: CircleShape, mode: 'radius' | 'diameter'): { x1: number; y1: number; x2: number; y2: number } {
+  const r = circle.radius;
+  return mode === 'radius'
+    ? { x1: circle.cx, y1: circle.cy, x2: circle.cx + r, y2: circle.cy }
+    : { x1: circle.cx - r, y1: circle.cy, x2: circle.cx + r, y2: circle.cy };
+}
+
+export function findCircleNear(shapes: Shape[], point: Point, tolerance: number): CircleShape | null {
+  let best: CircleShape | null = null;
+  let bestGap = tolerance;
+  for (const s of shapes) {
+    if (s.type !== 'circle') continue;
+    const gap = Math.abs(Math.hypot(point.x - s.cx, point.y - s.cy) - s.radius);
+    if (gap <= bestGap) {
+      best = s;
+      bestGap = gap;
+    }
+  }
+  return best;
+}
+
+export function applyCircleDimension(
+  shapes: Shape[],
+  circleId: string,
+  dimId: string,
+  mode: 'radius' | 'diameter',
+  value: number,
+): Shape[] {
+  const circle = shapes.find((s) => s.id === circleId);
+  if (!circle || circle.type !== 'circle') return shapes;
+  const radius = mode === 'radius' ? value : value / 2;
+  const resized: CircleShape = { ...circle, radius };
+  return shapes.map((s) => {
+    if (s.id === circleId) return resized;
+    if (s.id === dimId) return { ...s, ...circleDimensionEnds(resized, mode) };
+    return s;
+  });
+}
+
 export function findNearestShapeEndpoint(
   shapes: Shape[],
   point: Point,
@@ -234,7 +429,11 @@ export function findNearestShapeEndpoint(
   return best ? { shape: best.shape, point: best.point } : null;
 }
 
-export function getShapeEndpoints(shape: Shape): Point[] {
+function midpoint(a: Point, b: Point): Point {
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+}
+
+function boundsPoints(shape: Shape): Point[] {
   const b = shapeBounds(shape);
   return [
     { x: b.minX, y: b.minY },
@@ -247,3 +446,30 @@ export function getShapeEndpoints(shape: Shape): Point[] {
     { x: b.maxX, y: (b.minY + b.maxY) / 2 },
   ];
 }
+
+export function getShapeEndpoints(shape: Shape): Point[] {
+  switch (shape.type) {
+    case 'line': {
+      const a = { x: shape.x1, y: shape.y1 };
+      const b = { x: shape.x2, y: shape.y2 };
+      return [a, b, midpoint(a, b)];
+    }
+    case 'path': {
+      const pts = shape.points;
+      return [...pts, ...pts.slice(1).map((p, i) => midpoint(pts[i], p))];
+    }
+    case 'circle':
+      return [
+        { x: shape.cx, y: shape.cy },
+        { x: shape.cx + shape.radius, y: shape.cy },
+        { x: shape.cx - shape.radius, y: shape.cy },
+        { x: shape.cx, y: shape.cy + shape.radius },
+        { x: shape.cx, y: shape.cy - shape.radius },
+      ];
+    case 'rect':
+      return [...boundsPoints(shape), { x: shape.x + shape.width / 2, y: shape.y + shape.height / 2 }];
+    default:
+      return boundsPoints(shape);
+  }
+}
+
