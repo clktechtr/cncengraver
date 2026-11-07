@@ -22,7 +22,6 @@ import {
   Undo2,
   Redo2,
   Hexagon,
-  CircleDot,
   Scissors,
   ArrowRightToLine,
   AlignLeft,
@@ -32,6 +31,8 @@ import {
   AlignVerticalDistributeCenter,
   LayoutGrid,
   Maximize2,
+  Radius,
+  Diameter,
 } from 'lucide-react';
 
 type Props = {
@@ -67,6 +68,44 @@ type Props = {
   shapeCount: number;
   disabled?: boolean;
 };
+
+type ToolDef = { id: ToolType; icon: React.ReactNode; label: string };
+type ToolGroup = { label: string; tools: ToolDef[] };
+
+const TOOL_GROUPS: ToolGroup[] = [
+  {
+    label: 'Selection',
+    tools: [
+      { id: 'select', icon: <MousePointer2 size={16} />, label: 'Select' },
+    ],
+  },
+  {
+    label: 'Shapes',
+    tools: [
+      { id: 'rect', icon: <Square size={16} />, label: 'Rectangle' },
+      { id: 'polygon', icon: <Hexagon size={16} />, label: 'Polygon' },
+      { id: 'circle', icon: <CircleIcon size={16} />, label: 'Circle' },
+      { id: 'line', icon: <Minus size={16} />, label: 'Line' },
+      { id: 'path', icon: <Spline size={16} />, label: 'Path' },
+      { id: 'text', icon: <Type size={16} />, label: 'Text' },
+    ],
+  },
+  {
+    label: 'Dimensions',
+    tools: [
+      { id: 'dimension', icon: <PencilRuler size={16} />, label: 'Dimension' },
+      { id: 'radius', icon: <Radius size={16} />, label: 'Radius (R)' },
+      { id: 'diameter', icon: <Diameter size={16} />, label: 'Diameter (Ø)' },
+    ],
+  },
+  {
+    label: 'Edit',
+    tools: [
+      { id: 'trim', icon: <Scissors size={16} />, label: 'Trim' },
+      { id: 'extend', icon: <ArrowRightToLine size={16} />, label: 'Extend' },
+    ],
+  },
+];
 
 export default function Toolbar({
   tool,
@@ -105,21 +144,6 @@ export default function Toolbar({
   const fontRef = useRef<HTMLInputElement>(null);
   const [showTemplates, setShowTemplates] = useState(false);
 
-  const tools: { id: ToolType; icon: React.ReactNode; label: string }[] = [
-    { id: 'select', icon: <MousePointer2 size={16} />, label: 'Select' },
-    { id: 'rect', icon: <Square size={16} />, label: 'Rectangle' },
-    { id: 'polygon', icon: <Hexagon size={16} />, label: 'Polygon' },
-    { id: 'circle', icon: <CircleIcon size={16} />, label: 'Circle' },
-    { id: 'line', icon: <Minus size={16} />, label: 'Line' },
-    { id: 'path', icon: <Spline size={16} />, label: 'Path' },
-    { id: 'text', icon: <Type size={16} />, label: 'Text' },
-    { id: 'dimension', icon: <PencilRuler size={16} />, label: 'Dimension' },
-    { id: 'radius', icon: <CircleDot size={16} />, label: 'Radius (R)' },
-    { id: 'diameter', icon: <CircleDot size={16} />, label: 'Diameter (Ø)' },
-    { id: 'trim', icon: <Scissors size={16} />, label: 'Trim' },
-    { id: 'extend', icon: <ArrowRightToLine size={16} />, label: 'Extend' },
-  ];
-
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (file) onImportSvg(file);
@@ -142,154 +166,188 @@ export default function Toolbar({
 
   const disabledCls = disabled ? 'opacity-40 pointer-events-none' : '';
 
+  const btnBase =
+    'flex items-center justify-center w-9 h-9 rounded transition-colors ';
+  const btnActive = 'bg-blue-500 text-white';
+  const btnIdle = 'text-slate-400 hover:bg-slate-800 hover:text-slate-200';
+  const btnGhost =
+    'flex items-center justify-center w-9 h-9 rounded text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition-colors';
+  const btnGhostDisabled =
+    'flex items-center justify-center w-9 h-9 rounded text-slate-400 hover:bg-slate-800 hover:text-slate-200 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-400 transition-colors';
+
+  const Divider = () => <div className="w-px h-10 bg-slate-700 mx-1.5" />;
+
   return (
-    <div className={`flex items-center gap-1 px-2 py-1.5 bg-slate-900 border-b border-slate-700/50 transition-opacity ${disabledCls}`}>
-      <div className="flex items-center gap-0.5">
-        {tools.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTool(t.id)}
-            title={t.label}
-            className={`flex items-center justify-center w-9 h-9 rounded transition-colors ${
-              tool === t.id
-                ? 'bg-blue-500 text-white'
-                : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
-            }`}
-          >
-            {t.icon}
-          </button>
-        ))}
-      </div>
-
-      {tool === 'rect' && (
-        <button
-          onClick={() => setRectFromCenter(!rectFromCenter)}
-          title="Draw rectangles from the center"
-          className={`flex items-center h-9 px-2 rounded text-xs transition-colors ${
-            rectFromCenter ? 'bg-slate-700 text-slate-200' : 'text-slate-400 hover:bg-slate-800'
-          }`}
-        >
-          From center
-        </button>
-      )}
-      {tool === 'polygon' && (
-        <select
-          value={polygonSides}
-          onChange={(e) => setPolygonSides(Number(e.target.value))}
-          title="Polygon sides"
-          className="h-9 w-[84px] bg-slate-800 text-slate-300 text-xs rounded border border-slate-700 focus:border-blue-500 focus:outline-none px-1"
-        >
-          {[3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => (
-            <option key={n} value={n}>{n} sides</option>
-          ))}
-        </select>
-      )}
-      <div className="w-px h-6 bg-slate-700 mx-1" />
-
-      {/* Templates dropdown */}
-      <div className="relative">
-        <button
-          onClick={() => setShowTemplates((s) => !s)}
-          title="Template Shapes"
-          className={`flex items-center justify-center w-9 h-9 rounded transition-colors ${
-            showTemplates ? 'bg-slate-700 text-slate-200' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
-          }`}
-        >
-          <Shapes size={16} />
-        </button>
-        {showTemplates && (
-          <>
-            <div className="fixed inset-0 z-30" onClick={() => setShowTemplates(false)} />
-            <div className="absolute top-full left-0 mt-1 z-40 bg-slate-800 border border-slate-700 rounded-lg shadow-xl py-1 min-w-[180px] max-h-64 overflow-y-auto">
-              <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                Ready-Made Templates
-              </div>
-              {TEMPLATES.map((t) => (
+    <div
+      className={`flex items-center gap-1 px-2 py-1.5 bg-slate-900 border-b border-slate-700/50 transition-opacity ${disabledCls}`}
+    >
+      {/* Tool groups */}
+      {TOOL_GROUPS.map((group, gi) => (
+        <div key={group.label} className="flex items-center gap-0.5">
+          {gi > 0 && <Divider />}
+          <div className="flex flex-col items-center gap-0.5">
+            <div className="flex items-center gap-0.5">
+              {group.tools.map((t) => (
                 <button
                   key={t.id}
-                  onClick={() => handleTemplateClick(t.id)}
-                  className="w-full text-left px-3 py-2 text-xs text-slate-300 hover:bg-slate-700 transition-colors"
+                  onClick={() => setTool(t.id)}
+                  title={t.label}
+                  className={`${btnBase} ${tool === t.id ? btnActive : btnIdle}`}
                 >
-                  {t.name}
+                  {t.icon}
                 </button>
               ))}
             </div>
-          </>
-        )}
+            <span className="text-[9px] font-medium text-slate-600 uppercase tracking-wide select-none">
+              {group.label}
+            </span>
+          </div>
+        </div>
+      ))}
+
+      {/* Tool context options */}
+      {tool === 'rect' && (
+        <>
+          <Divider />
+          <button
+            onClick={() => setRectFromCenter(!rectFromCenter)}
+            title="Draw rectangles from the center"
+            className={`flex items-center h-9 px-2 rounded text-xs transition-colors ${
+              rectFromCenter ? 'bg-slate-700 text-slate-200' : 'text-slate-400 hover:bg-slate-800'
+            }`}
+          >
+            From center
+          </button>
+        </>
+      )}
+      {tool === 'polygon' && (
+        <>
+          <Divider />
+          <select
+            value={polygonSides}
+            onChange={(e) => setPolygonSides(Number(e.target.value))}
+            title="Polygon sides"
+            className="h-9 w-[84px] bg-slate-800 text-slate-300 text-xs rounded border border-slate-700 focus:border-blue-500 focus:outline-none px-1"
+          >
+            {[3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => (
+              <option key={n} value={n}>{n} sides</option>
+            ))}
+          </select>
+        </>
+      )}
+
+      <Divider />
+
+      {/* Import group */}
+      <div className="flex items-center gap-0.5">
+        <div className="relative">
+          <button
+            onClick={() => setShowTemplates((s) => !s)}
+            title="Template Shapes"
+            className={`${btnBase} ${
+              showTemplates ? 'bg-slate-700 text-slate-200' : btnIdle
+            }`}
+          >
+            <Shapes size={16} />
+          </button>
+          {showTemplates && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setShowTemplates(false)} />
+              <div className="absolute top-full left-0 mt-1 z-40 bg-slate-800 border border-slate-700 rounded-lg shadow-xl py-1 min-w-[180px] max-h-64 overflow-y-auto">
+                <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  Ready-Made Templates
+                </div>
+                {TEMPLATES.map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => handleTemplateClick(t.id)}
+                    className="w-full text-left px-3 py-2 text-xs text-slate-300 hover:bg-slate-700 transition-colors"
+                  >
+                    {t.name}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".svg,image/svg+xml"
+          onChange={handleFileChange}
+          className="hidden"
+        />
+        <button
+          onClick={() => fileRef.current?.click()}
+          title="Import SVG"
+          className={btnGhost}
+        >
+          <Upload size={16} />
+        </button>
+
+        <input
+          ref={fontRef}
+          type="file"
+          accept=".ttf,.otf,.woff,.woff2"
+          onChange={handleFontChange}
+          className="hidden"
+        />
+        <button
+          onClick={() => fontRef.current?.click()}
+          title="Upload Custom Font"
+          className={btnGhost}
+        >
+          <FileType size={16} />
+        </button>
       </div>
 
-      <input
-        ref={fileRef}
-        type="file"
-        accept=".svg,image/svg+xml"
-        onChange={handleFileChange}
-        className="hidden"
-      />
-      <button
-        onClick={() => fileRef.current?.click()}
-        title="Import SVG"
-        className="flex items-center justify-center w-9 h-9 rounded text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition-colors"
-      >
-        <Upload size={16} />
-      </button>
+      <Divider />
 
-      <input
-        ref={fontRef}
-        type="file"
-        accept=".ttf,.otf,.woff,.woff2"
-        onChange={handleFontChange}
-        className="hidden"
-      />
-      <button
-        onClick={() => fontRef.current?.click()}
-        title="Upload Custom Font"
-        className="flex items-center justify-center w-9 h-9 rounded text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition-colors"
-      >
-        <FileType size={16} />
-      </button>
+      {/* Grid & display group */}
+      <div className="flex items-center gap-0.5">
+        <button
+          onClick={() => setShowGrid(!showGrid)}
+          title="Toggle Grid"
+          className={`${btnBase} ${
+            showGrid ? 'bg-slate-700 text-slate-200' : btnIdle
+          }`}
+        >
+          <Grid3x3 size={16} />
+        </button>
+        <select
+          value={gridSize}
+          onChange={(e) => setGridSize(Number(e.target.value))}
+          title="Grid spacing"
+          className="h-9 w-[62px] bg-slate-800 text-slate-300 text-xs rounded border border-slate-700 focus:border-blue-500 focus:outline-none px-1"
+        >
+          {[1, 2, 5, 10, 20, 25, 50].map((size) => (
+            <option key={size} value={size}>{size} mm</option>
+          ))}
+        </select>
+        <button
+          onClick={() => setSnapToGrid(!snapToGrid)}
+          title="Toggle grid snapping"
+          className={`flex items-center justify-center h-9 px-2 rounded text-xs transition-colors ${
+            snapToGrid ? 'bg-amber-500/20 text-amber-300' : 'text-slate-400 hover:bg-slate-800'
+          }`}
+        >
+          Snap
+        </button>
+        <button
+          onClick={() => setShowDimensions(!showDimensions)}
+          title="Toggle Dimensions"
+          className={`${btnBase} ${
+            showDimensions ? 'bg-slate-700 text-slate-200' : btnIdle
+          }`}
+        >
+          <Ruler size={16} />
+        </button>
+      </div>
 
-      <div className="w-px h-6 bg-slate-700 mx-1" />
+      <Divider />
 
-      <button
-        onClick={() => setShowGrid(!showGrid)}
-        title="Toggle Grid"
-        className={`flex items-center justify-center w-9 h-9 rounded transition-colors ${
-          showGrid ? 'bg-slate-700 text-slate-200' : 'text-slate-400 hover:bg-slate-800'
-        }`}
-      >
-        <Grid3x3 size={16} />
-      </button>
-      <select
-        value={gridSize}
-        onChange={(e) => setGridSize(Number(e.target.value))}
-        title="Grid spacing"
-        className="h-9 w-[62px] bg-slate-800 text-slate-300 text-xs rounded border border-slate-700 focus:border-blue-500 focus:outline-none px-1"
-      >
-        {[1, 2, 5, 10, 20, 25, 50].map((size) => (
-          <option key={size} value={size}>{size} mm</option>
-        ))}
-      </select>
-      <button
-        onClick={() => setSnapToGrid(!snapToGrid)}
-        title="Toggle grid snapping"
-        className={`flex items-center justify-center h-9 px-2 rounded text-xs transition-colors ${
-          snapToGrid ? 'bg-amber-500/20 text-amber-300' : 'text-slate-400 hover:bg-slate-800'
-        }`}
-      >
-        Snap
-      </button>
-      <button
-        onClick={() => setShowDimensions(!showDimensions)}
-        title="Toggle Dimensions"
-        className={`flex items-center justify-center w-9 h-9 rounded transition-colors ${
-          showDimensions ? 'bg-slate-700 text-slate-200' : 'text-slate-400 hover:bg-slate-800'
-        }`}
-      >
-        <Ruler size={16} />
-      </button>
-
-      <div className="w-px h-6 bg-slate-700 mx-1" />
-
+      {/* Shape count */}
       <div className="flex items-center gap-1.5">
         <Layers size={14} className="text-slate-500" />
         <span className="text-xs text-slate-400">{shapeCount} shapes</span>
@@ -297,6 +355,7 @@ export default function Toolbar({
 
       <div className="flex-1" />
 
+      {/* Workspace group */}
       <div className="flex items-center gap-2">
         <Settings2 size={14} className="text-slate-500" />
         <label className="text-xs text-slate-400">Workspace:</label>
@@ -316,14 +375,15 @@ export default function Toolbar({
         <span className="text-xs text-slate-500">{workspace.unit}</span>
       </div>
 
-      <div className="w-px h-6 bg-slate-700 mx-1" />
+      <Divider />
 
+      {/* Undo/redo group */}
       <div className="flex items-center gap-0.5">
         <button
           onClick={onUndo}
           disabled={!canUndo}
           title="Undo (Ctrl+Z)"
-          className="flex items-center justify-center w-9 h-9 rounded text-slate-400 hover:bg-slate-800 hover:text-slate-200 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-400 transition-colors"
+          className={btnGhostDisabled}
         >
           <Undo2 size={16} />
         </button>
@@ -331,14 +391,15 @@ export default function Toolbar({
           onClick={onRedo}
           disabled={!canRedo}
           title="Redo (Ctrl+Y)"
-          className="flex items-center justify-center w-9 h-9 rounded text-slate-400 hover:bg-slate-800 hover:text-slate-200 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-400 transition-colors"
+          className={btnGhostDisabled}
         >
           <Redo2 size={16} />
         </button>
       </div>
 
-      <div className="w-px h-6 bg-slate-700 mx-1" />
+      <Divider />
 
+      {/* Alignment group */}
       <div className="flex items-center gap-0.5">
         {([
           { mode: 'left', icon: <AlignLeft size={16} />, title: 'Align left' },
@@ -350,7 +411,7 @@ export default function Toolbar({
             onClick={() => onAlign(a.mode)}
             disabled={selectionCount < 2}
             title={a.title}
-            className="flex items-center justify-center w-9 h-9 rounded text-slate-400 hover:bg-slate-800 hover:text-slate-200 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-400 transition-colors"
+            className={btnGhostDisabled}
           >
             {a.icon}
           </button>
@@ -359,7 +420,7 @@ export default function Toolbar({
           onClick={() => onDistribute('horizontal')}
           disabled={selectionCount < 3}
           title="Distribute horizontally"
-          className="flex items-center justify-center w-9 h-9 rounded text-slate-400 hover:bg-slate-800 hover:text-slate-200 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-400 transition-colors"
+          className={btnGhostDisabled}
         >
           <AlignHorizontalDistributeCenter size={16} />
         </button>
@@ -367,7 +428,7 @@ export default function Toolbar({
           onClick={() => onDistribute('vertical')}
           disabled={selectionCount < 3}
           title="Distribute vertically"
-          className="flex items-center justify-center w-9 h-9 rounded text-slate-400 hover:bg-slate-800 hover:text-slate-200 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-400 transition-colors"
+          className={btnGhostDisabled}
         >
           <AlignVerticalDistributeCenter size={16} />
         </button>
@@ -375,7 +436,7 @@ export default function Toolbar({
           onClick={onOpenPattern}
           disabled={selectionCount < 1}
           title="Pattern copies (linear or circular)"
-          className="flex items-center justify-center w-9 h-9 rounded text-slate-400 hover:bg-slate-800 hover:text-slate-200 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-400 transition-colors"
+          className={btnGhostDisabled}
         >
           <LayoutGrid size={16} />
         </button>
@@ -383,14 +444,15 @@ export default function Toolbar({
           onClick={onOpenScale}
           disabled={selectionCount < 1}
           title="Scale selection by percentage"
-          className="flex items-center justify-center w-9 h-9 rounded text-slate-400 hover:bg-slate-800 hover:text-slate-200 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-400 transition-colors"
+          className={btnGhostDisabled}
         >
           <Maximize2 size={16} />
         </button>
       </div>
 
-      <div className="w-px h-6 bg-slate-700 mx-1" />
+      <Divider />
 
+      {/* Delete */}
       <button
         onClick={onClearShapes}
         disabled={shapeCount === 0}

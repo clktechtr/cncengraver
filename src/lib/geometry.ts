@@ -377,13 +377,21 @@ export function circleDimensionEnds(circle: CircleShape, mode: 'radius' | 'diame
 
 export function findCircleNear(shapes: Shape[], point: Point, tolerance: number): CircleShape | null {
   let best: CircleShape | null = null;
-  let bestGap = tolerance;
+  let bestScore = Infinity;
   for (const s of shapes) {
     if (s.type !== 'circle') continue;
-    const gap = Math.abs(Math.hypot(point.x - s.cx, point.y - s.cy) - s.radius);
-    if (gap <= bestGap) {
-      best = s;
-      bestGap = gap;
+    const dist = Math.hypot(point.x - s.cx, point.y - s.cy);
+    const edgeGap = Math.abs(dist - s.radius);
+    if (edgeGap <= tolerance) {
+      if (edgeGap < bestScore) {
+        best = s;
+        bestScore = edgeGap;
+      }
+    } else if (dist <= s.radius) {
+      if (s.radius < bestScore) {
+        best = s;
+        bestScore = s.radius;
+      }
     }
   }
   return best;
