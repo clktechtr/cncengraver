@@ -180,7 +180,7 @@ export function systemFontToPathPoints(
   return contours.map((contour) =>
     contour.map((p) => ({
       x: offsetX + (p.x - 2) * scale,
-      y: offsetY + (p.y - 2 - pxSize) * scale,
+      y: offsetY + (pxSize + 2 - p.y) * scale,
     }))
   );
 }
