@@ -126,7 +126,8 @@ function generateProfileGCode(shape: Shape, settings: CamSettings, lines: string
     const charPaths = textToPathPoints(shape);
     for (const path of charPaths) {
       if (path.length < 2) continue;
-      cutPath(path, settings, lines, passCount, true);
+      const fontId = (shape as any).font || 'cnc-stroke';
+      cutPath(path, settings, lines, passCount, !isCncStrokeFont(fontId));
     }
     return;
   }
@@ -195,7 +196,8 @@ function generateVCarveGCode(shape: Shape, settings: CamSettings, lines: string[
     const charPaths = textToPathPoints(shape);
     for (const path of charPaths) {
       if (path.length < 2) continue;
-      cutPath(path, settings, lines, passCount, true);
+      const fontId = (shape as any).font || 'cnc-stroke';
+      cutPath(path, settings, lines, passCount, !isCncStrokeFont(fontId));
     }
     return;
   }
