@@ -1,4 +1,4 @@
-export type ToolType = 'select' | 'rect' | 'circle' | 'line' | 'text' | 'path' | 'dimension' | 'polygon' | 'radius' | 'diameter' | 'trim' | 'extend';
+export type ToolType = 'select' | 'rect' | 'circle' | 'line' | 'text' | 'path' | 'dimension' | 'polygon' | 'radius' | 'diameter' | 'trim' | 'extend' | 'chamfer';
 
 export type Point = { x: number; y: number };
 

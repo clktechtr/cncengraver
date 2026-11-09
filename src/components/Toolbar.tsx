@@ -24,6 +24,7 @@ import {
   Hexagon,
   Scissors,
   ArrowRightToLine,
+  CornerDownRight,
   AlignLeft,
   AlignCenter,
   AlignRight,
@@ -103,6 +104,7 @@ const TOOL_GROUPS: ToolGroup[] = [
     tools: [
       { id: 'trim', icon: <Scissors size={16} />, label: 'Trim' },
       { id: 'extend', icon: <ArrowRightToLine size={16} />, label: 'Extend' },
+      { id: 'chamfer', icon: <CornerDownRight size={16} />, label: 'Chamfer / Pah' },
     ],
   },
 ];

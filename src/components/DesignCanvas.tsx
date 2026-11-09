@@ -3,7 +3,7 @@ import type { Shape, Point, ToolType, Workspace, DimensionShape } from '@/types'
 import { pointInShape, shapeBounds, genId, resizeShapeByDimension, findNearestShapeEndpoint, transformShape, transformDimensionAnchors, isDimensionAnchoredTo, translateShapes, findCircleNear, circleDimensionEnds, applyCircleDimension } from '@/lib/geometry';
 import type { Transform } from '@/lib/geometry';
 import { textToPathPoints } from '@/lib/gcode';
-import { trimLineAt, extendLineAt } from '@/lib/trimExtend';
+import { trimLineAt, extendLineAt, chamferAt } from '@/lib/trimExtend';
 import { getAllFonts } from '@/lib/fontManager';
 
 type Props = {
@@ -353,6 +353,20 @@ export default function DesignCanvas({
         ctx.moveTo(p2.x, p2.y - 6); ctx.lineTo(p2.x, p2.y + 6);
         ctx.stroke();
 
+        const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+        const drawArrow = (tip: Point, direction: number) => {
+          ctx.beginPath();
+          ctx.moveTo(tip.x, tip.y);
+          ctx.lineTo(tip.x - Math.cos(direction - 0.45) * 7, tip.y - Math.sin(direction - 0.45) * 7);
+          ctx.moveTo(tip.x, tip.y);
+          ctx.lineTo(tip.x - Math.cos(direction + 0.45) * 7, tip.y - Math.sin(direction + 0.45) * 7);
+          ctx.stroke();
+        };
+        ctx.strokeStyle = selected ? '#f59e0b' : (hasTarget ? '#22c55e' : '#a78bfa');
+        ctx.lineWidth = 1;
+        drawArrow(p1, angle);
+        drawArrow(p2, angle + Math.PI);
+
         if (isFromOrigin) {
           ctx.fillStyle = '#22c55e';
           ctx.beginPath();
@@ -412,6 +426,7 @@ export default function DesignCanvas({
     if (shapes.length === 0) return;
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const s of shapes) {
+      if (s.type === 'dimension') continue;
       const b = shapeBounds(s);
       minX = Math.min(minX, b.minX);
       minY = Math.min(minY, b.minY);
@@ -549,9 +564,13 @@ export default function DesignCanvas({
       return;
     }
 
-    if (tool === 'trim' || tool === 'extend') {
-      const tolerance = 4 / (MM_TO_PX * view.scale);
-      const next = tool === 'trim' ? trimLineAt(shapes, world, tolerance) : extendLineAt(shapes, world, tolerance);
+    if (tool === 'trim' || tool === 'extend' || tool === 'chamfer') {
+      const tolerance = 6 / (MM_TO_PX * view.scale);
+      const next = tool === 'trim'
+        ? trimLineAt(shapes, world, tolerance)
+        : tool === 'extend'
+          ? extendLineAt(shapes, world, tolerance)
+          : chamferAt(shapes, world, tolerance);
       if (next) {
         setShapes(() => next);
         setSelectedIds([]);

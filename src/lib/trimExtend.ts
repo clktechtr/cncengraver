@@ -55,7 +55,14 @@ export function trimLineAt(shapes: Shape[], point: Point, tolerance: number): Sh
     const hit = segmentIntersection(a, b, { x: other.x1, y: other.y1 }, { x: other.x2, y: other.y2 });
     if (hit && hit.t > EPS && hit.t < 1 - EPS && hit.u >= -EPS && hit.u <= 1 + EPS) cuts.push(hit.t);
   }
-  if (cuts.length === 0) return null;
+  if (cuts.length === 0) {
+    if (clickT <= EPS || clickT >= 1 - EPS) return null;
+    const keepStart = clickT > 0.5;
+    const trimmed: LineShape = keepStart
+      ? { ...target, x1: a.x, y1: a.y, x2: a.x + rx * clickT, y2: a.y + ry * clickT }
+      : { ...target, x1: a.x + rx * clickT, y1: a.y + ry * clickT, x2: b.x, y2: b.y };
+    return shapes.map((s) => (s.id === target.id ? trimmed : s));
+  }
 
   const before = cuts.filter((t) => t < clickT);
   const after = cuts.filter((t) => t > clickT);
@@ -74,6 +81,34 @@ export function trimLineAt(shapes: Shape[], point: Point, tolerance: number): Sh
   }));
 
   return shapes.flatMap((s) => (s.id === target.id ? replacements : [s]));
+}
+
+export function chamferAt(shapes: Shape[], point: Point, tolerance: number, distance = 5): Shape[] | null {
+  const lines = otherLines(shapes, '');
+  for (let i = 0; i < lines.length; i++) {
+    for (let j = i + 1; j < lines.length; j++) {
+      const first = lines[i];
+      const second = lines[j];
+      const firstEnds = lineEnds(first);
+      const secondEnds = lineEnds(second);
+      for (const corner of firstEnds) {
+        const secondCorner = secondEnds.find((candidate) => Math.hypot(candidate.x - corner.x, candidate.y - corner.y) <= tolerance);
+        if (!secondCorner || Math.hypot(point.x - corner.x, point.y - corner.y) > tolerance * 2) continue;
+        const firstOther = firstEnds[0] === corner ? firstEnds[1] : firstEnds[0];
+        const secondOther = secondEnds[0] === secondCorner ? secondEnds[1] : secondEnds[0];
+        const firstLength = Math.hypot(firstOther.x - corner.x, firstOther.y - corner.y);
+        const secondLength = Math.hypot(secondOther.x - secondCorner.x, secondOther.y - secondCorner.y);
+        if (firstLength < distance || secondLength < distance) return null;
+        const firstCut = { x: corner.x + (firstOther.x - corner.x) * distance / firstLength, y: corner.y + (firstOther.y - corner.y) * distance / firstLength };
+        const secondCut = { x: secondCorner.x + (secondOther.x - secondCorner.x) * distance / secondLength, y: secondCorner.y + (secondOther.y - secondCorner.y) * distance / secondLength };
+        const nextFirst = firstEnds[0] === corner ? { ...first, x1: firstCut.x, y1: firstCut.y } : { ...first, x2: firstCut.x, y2: firstCut.y };
+        const nextSecond = secondEnds[0] === secondCorner ? { ...second, x1: secondCut.x, y1: secondCut.y } : { ...second, x2: secondCut.x, y2: secondCut.y };
+        const chamfer: LineShape = { id: genId(), type: 'line', selected: false, x1: firstCut.x, y1: firstCut.y, x2: secondCut.x, y2: secondCut.y };
+        return shapes.map((shape) => shape.id === first.id ? nextFirst : shape.id === second.id ? nextSecond : shape).concat(chamfer);
+      }
+    }
+  }
+  return null;
 }
 
 export function extendLineAt(shapes: Shape[], point: Point, tolerance: number): Shape[] | null {
