@@ -58,7 +58,8 @@ function layoutTextPaths(shape: TextShape): Point[][] {
     return systemFontToPathPoints(shape.text, shape.x, shape.y, shape.fontSize, fontId);
   }
   const paths: Point[][] = [];
-  const charWidth = shape.fontSize * 0.6;
+  const glyphWidth = shape.fontSize * 0.6;
+  const advanceWidth = shape.fontSize * 0.78;
   const charHeight = shape.fontSize;
   const text = shape.text.toUpperCase();
 
@@ -67,12 +68,12 @@ function layoutTextPaths(shape: TextShape): Point[][] {
     const charPaths = TEXT_CHAR_PATHS[ch];
     if (!charPaths) continue;
 
-    const offsetX = shape.x + ci * charWidth;
+    const offsetX = shape.x + ci * advanceWidth;
     const offsetY = shape.y;
 
     for (const path of charPaths) {
       const pts: Point[] = path.map((p) => ({
-        x: offsetX + (p.x / 5) * charWidth,
+        x: offsetX + (p.x / 5) * glyphWidth,
         y: offsetY - (p.y / 10) * charHeight,
       }));
       paths.push(pts);
