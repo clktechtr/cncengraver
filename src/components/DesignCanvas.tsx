@@ -565,15 +565,17 @@ export default function DesignCanvas({
     }
 
     if (tool === 'trim' || tool === 'extend' || tool === 'chamfer') {
-      const tolerance = 6 / (MM_TO_PX * view.scale);
+      const tolerance = 14 / (MM_TO_PX * view.scale);
       const next = tool === 'trim'
         ? trimLineAt(shapes, world, tolerance)
         : tool === 'extend'
           ? extendLineAt(shapes, world, tolerance)
           : chamferAt(shapes, world, tolerance);
       if (next) {
+        beginEdit();
         setShapes(() => next);
         setSelectedIds([]);
+        endEdit();
       }
       return;
     }

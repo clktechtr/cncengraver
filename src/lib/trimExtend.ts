@@ -64,11 +64,10 @@ export function trimLineAt(shapes: Shape[], point: Point, tolerance: number): Sh
     return shapes.map((s) => (s.id === target.id ? trimmed : s));
   }
 
-  const before = cuts.filter((t) => t < clickT);
-  const after = cuts.filter((t) => t > clickT);
-  const keep: Array<[number, number]> = [];
-  if (before.length > 0) keep.push([0, Math.max(...before)]);
-  if (after.length > 0) keep.push([Math.min(...after), 1]);
+  const nearestCut = cuts.reduce((nearest, cut) => Math.abs(cut - clickT) < Math.abs(nearest - clickT) ? cut : nearest, cuts[0]);
+  const keep: Array<[number, number]> = clickT <= nearestCut
+    ? [[0, nearestCut]]
+    : [[nearestCut, 1]];
 
   const replacements: LineShape[] = keep.map(([t0, t1], i) => ({
     id: i === 0 ? target.id : genId(),
