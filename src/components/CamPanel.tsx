@@ -21,7 +21,13 @@ export default function CamPanel({ settings, onChange, onGenerate, shapeCount, d
   return (
     <div className={`flex flex-col gap-4 p-4 transition-opacity ${disabledCls}`}>
       <div>
-        <h3 className="text-sm font-semibold text-slate-200 mb-3">Toolpath Settings</h3>
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-100">G-code Settings</h3>
+            <p className="text-[11px] text-slate-500 mt-0.5">Tool, cutting and motion parameters</p>
+          </div>
+          <span className="px-2 py-1 rounded-md bg-blue-500/10 text-[10px] font-semibold uppercase tracking-wide text-blue-300">CAM</span>
+        </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="col-span-2">
             <label className="text-xs text-slate-400 mb-1 block">Cut Type</label>
@@ -41,6 +47,8 @@ export default function CamPanel({ settings, onChange, onGenerate, shapeCount, d
               ))}
             </div>
           </div>
+
+          <div className="col-span-2 pt-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Tool & cut</div>
 
           {isVCarve ? (
             <>
@@ -64,6 +72,8 @@ export default function CamPanel({ settings, onChange, onGenerate, shapeCount, d
               <Field label="Spindle Speed" value={settings.spindleSpeed} unit="RPM" onChange={(v) => update('spindleSpeed', v)} />
             </>
           )}
+
+          <div className="col-span-2 pt-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Machine motion</div>
 
           <div>
             <label className="text-xs text-slate-400 mb-1 block">Units</label>
@@ -143,6 +153,8 @@ function Field({
           type="number"
           value={value}
           onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
+          min="0"
+          step="any"
           className="w-full bg-slate-800 text-slate-200 text-sm rounded px-2 py-1.5 pr-10 border border-slate-700 focus:border-blue-500 focus:outline-none"
         />
         <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-500">{unit}</span>
